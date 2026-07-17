@@ -212,14 +212,16 @@ function renderStandings() {
 }
 
 // ---------- bracket ----------
-function renderBracket() {
+function renderBracket() { renderBracketObj(DATA.bracket); }
+
+function renderBracketObj(br) {
   const root = document.getElementById("bracket-content");
   root.innerHTML = "";
-  const br = DATA.bracket;
   if (!br) { root.innerHTML = `<p class="section-intro">No knockout yet — run
-    <code>analysis/run_bracket.py</code> and rebuild the site data.</p>`; return; }
+    <code>analysis/run_bracket.py</code> and rebuild the site data, or hit
+    <em>Run knockout live</em> above.</p>`; return; }
 
-  br.rounds.forEach(round => {
+  (br.rounds || []).forEach(round => {
     const col = el("div", "bracket-round");
     col.appendChild(el("div", "round-name", round.name));
     round.ties.forEach(tie => {
@@ -231,17 +233,60 @@ function renderBracket() {
     root.appendChild(col);
   });
 
-  const champ = el("div", "bracket-round champion-col");
-  champ.appendChild(el("div", "round-name", "Champion"));
-  const c = engineOf(br.champion);
-  const trophy = el("div", "tie champion-card");
-  trophy.innerHTML = `<div class="trophy">🏆</div>
-    <div class="tie-side win"><span class="flag">${codeToFlag(c.country)}</span>
-      <span class="dot" style="background:${c.color}"></span>
-      <span class="nm">${br.champion}</span><span class="lang">${c.lang}</span></div>
-    <div class="champ-sub">${br.mode} ${br.budget} · best of ${br.games_per_tie}</div>`;
-  champ.appendChild(trophy);
-  root.appendChild(champ);
+  if (br.champion) {
+    const champ = el("div", "bracket-round champion-col");
+    champ.appendChild(el("div", "round-name", "Champion"));
+    const c = engineOf(br.champion);
+    const trophy = el("div", "tie champion-card");
+    trophy.innerHTML = `<div class="trophy">🏆</div>
+      <div class="tie-side win"><span class="flag">${codeToFlag(c.country)}</span>
+        <span class="dot" style="background:${c.color}"></span>
+        <span class="nm">${br.champion}</span><span class="lang">${c.lang}</span></div>
+      <div class="champ-sub">${br.mode || ""} ${br.budget || ""} · best of ${br.games_per_tie || ""}</div>`;
+    champ.appendChild(trophy);
+    root.appendChild(champ);
+  }
+}
+
+// Live knockout streaming.
+const LIVEBK = { es: null, br: null };
+function bkRound(name) {
+  let r = LIVEBK.br.rounds.find(x => x.name === name);
+  if (!r) { r = { name, ties: [] }; LIVEBK.br.rounds.push(r); }
+  return r;
+}
+async function runKnockoutLive() {
+  const budget = +id("bk-budget").value, games = +id("bk-games").value;
+  id("bk-status").textContent = "seeding & starting…";
+  await fetch("/api/bracket-start", { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ budget, games }) });
+  if (LIVEBK.es) LIVEBK.es.close();
+  LIVEBK.br = { seeds: [], rounds: [], champion: null, mode: "nodes", budget, games_per_tie: games };
+  renderBracketObj(LIVEBK.br);
+  const es = new EventSource("/api/bracket-stream"); LIVEBK.es = es;
+  es.addEventListener("seeds", e => {
+    const d = JSON.parse(e.data);
+    LIVEBK.br.seeds = d.seeds; LIVEBK.br.mode = d.mode; LIVEBK.br.budget = d.budget;
+    LIVEBK.br.games_per_tie = d.games_per_tie;
+    id("bk-status").textContent = "🔴 bracket live — seeded, playing…";
+  });
+  es.addEventListener("tie_start", e => {
+    const d = JSON.parse(e.data);
+    id("bk-status").textContent = `🔴 ${d.round}: ${d.a} vs ${d.b} …`;
+  });
+  es.addEventListener("tie_result", e => {
+    bkRound(JSON.parse(e.data).round).ties.push(JSON.parse(e.data));
+    renderBracketObj(LIVEBK.br);
+  });
+  es.addEventListener("champion", e => {
+    LIVEBK.br.champion = JSON.parse(e.data).engine;
+    renderBracketObj(LIVEBK.br);
+    id("bk-status").textContent = `🏆 champion: ${LIVEBK.br.champion}`;
+  });
+  es.addEventListener("reset", () => {
+    LIVEBK.br = { seeds: [], rounds: [], champion: null };
+    renderBracketObj(LIVEBK.br);
+  });
 }
 function tieSide(name, seed, score, isWin, bye) {
   if (name === "BYE" || name == null)
@@ -504,5 +549,15 @@ async function boot() {
   renderGates();
   loadMarket();
   renderMarkets();
+
+  // If the live server is up, enable the "Run knockout live" controls.
+  try {
+    const cfg = await (await fetch("/api/config")).json();
+    if (cfg && cfg.available) {
+      if (cfg.engines) LIVE.meta = cfg.engines;
+      document.getElementById("bracket-live-controls").style.display = "flex";
+      document.getElementById("bk-run").onclick = runKnockoutLive;
+    }
+  } catch (e) { /* static server — no live controls */ }
 }
 boot();

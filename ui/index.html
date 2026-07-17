@@ -107,6 +107,12 @@
   <section id="bracket" class="tab">
     <p class="section-intro">Single-elimination knockout, seeded from the group-stage
     standings. Each tie is a mini-match; the winner advances.</p>
+    <div id="bracket-live-controls" class="live-controls" style="display:none">
+      <label>Budget/tie <input id="bk-budget" type="number" value="12000" style="width:90px"></label>
+      <label>Games/tie <input id="bk-games" type="number" value="4" style="width:60px"></label>
+      <button id="bk-run" class="live-go">▶ Run knockout live</button>
+      <span id="bk-status" class="live-status"></span>
+    </div>
     <div id="bracket-content" class="bracket"></div>
   </section>
 

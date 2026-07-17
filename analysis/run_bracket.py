@@ -20,6 +20,7 @@ ENGINES = {
     "cpp-alphabeta": [os.path.join(ROOT, "build", "cpp-alphabeta")],
     "cpp-greedy":    [os.path.join(ROOT, "build", "cpp-greedy")],
     "rs-alphabeta":  [os.path.join(ROOT, "bots", "rs-alphabeta", "target", "release", "rs-alphabeta")],
+    "js-alphabeta":  [os.path.join(ROOT, "bots", "js-alphabeta", "js-alphabeta")],
     "random":        [os.path.join(ROOT, "build", "random")],
     "py-alphabeta":  [os.path.join(ROOT, "bots", "py-alphabeta", "py-alphabeta")],
     "py-mcts":       [os.path.join(ROOT, "bots", "py-mcts", "py-mcts")],
@@ -104,6 +105,7 @@ def main():
     ap.add_argument("--games", type=int, default=4, help="games per knockout tie")
     ap.add_argument("--out-jsonl", default="runs/knockout.jsonl")
     ap.add_argument("--out-bracket", default="runs/bracket.json")
+    ap.add_argument("--progress", help="write live per-tie progress events here")
     args = ap.parse_args()
 
     if args.seeds:
@@ -124,6 +126,18 @@ def main():
     order = bracket_positions(size)
     slots = [padded[s - 1] for s in order]  # engines in bracket position order
 
+    # Optional live-progress stream (one JSON event per line, flushed).
+    prog = open(args.progress, "w") if args.progress else None
+
+    def emit(ev):
+        if prog:
+            prog.write(json.dumps(ev) + "\n")
+            prog.flush()
+
+    emit({"type": "seeds", "mode": args.mode, "budget": args.budget,
+          "games_per_tie": args.games,
+          "seeds": [{"seed": i + 1, "engine": n} for i, n in enumerate(padded) if n != BYE]})
+
     open(args.out_jsonl, "w").close()
     base_id = 0
     rounds = []
@@ -134,14 +148,17 @@ def main():
     while len(current) > 1:
         ties = []
         winners = []
+        rname = round_names.get(len(current) // 2, f"Round ({len(current) // 2})")
         for i in range(0, len(current), 2):
             a, b = current[i], current[i + 1]
-            tie = {"a": a, "b": b,
+            tie = {"round": rname, "a": a, "b": b,
                    "seedA": seed_of.get(a), "seedB": seed_of.get(b)}
             if a == BYE or b == BYE:
                 win = b if a == BYE else a
                 tie.update({"scoreA": None, "scoreB": None, "winner": win, "bye": True})
             else:
+                emit({"type": "tie_start", "round": rname, "a": a, "b": b,
+                      "seedA": seed_of.get(a), "seedB": seed_of.get(b)})
                 sa, sb, wa, wb, ng, base_id = run_tie(a, b, args.mode, args.budget,
                                                       args.games, args.out_jsonl, base_id)
                 if sa > sb or (sa == sb and (wa, -seed_of[a]) >= (wb, -seed_of[b])):
@@ -150,14 +167,17 @@ def main():
                     win = b
                 tie.update({"scoreA": sa, "scoreB": sb, "winner": win, "bye": False})
                 print(f"  {a} {sa} - {sb} {b}  -> {win}", flush=True)
+            emit({"type": "tie_result", **tie})
             ties.append(tie)
             winners.append(tie["winner"])
-        rounds.append({"name": round_names.get(len(ties), f"Round ({len(ties)})"),
-                       "ties": ties})
-        print(f"[{rounds[-1]['name']}] done", flush=True)
+        rounds.append({"name": rname, "ties": ties})
+        print(f"[{rname}] done", flush=True)
         current = winners
 
     champion = current[0]
+    emit({"type": "champion", "engine": champion})
+    if prog:
+        prog.close()
     bracket = {"seeds": [{"seed": i + 1, "engine": n} for i, n in enumerate(padded) if n != BYE],
                "rounds": rounds, "champion": champion,
                "mode": args.mode, "budget": args.budget, "games_per_tie": args.games}

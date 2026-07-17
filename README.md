@@ -197,34 +197,39 @@ share**, because `py-alphabeta` runs at **~31× fewer nodes/sec** and simply sea
 in the same 100 ms. That **~24-point swing, from a 30.7× throughput penalty, is the language
 tax** — Elo lost purely to implementation, with algorithm and knowledge held constant.
 
-The three same-algorithm engines give a **language-tax spectrum** (search nodes/sec):
+**Four** same-algorithm engines in **four languages** give a language-tax spectrum. Same
+search, same eval; only the language and how it reaches libchess differ (search nodes/sec,
+startpos, 300 ms):
 
-| engine | language | NPS | tax vs C++ |
-|---|---|---|---|
-| cpp-alphabeta | C++ | ~4.0 M | 1.0× (baseline) |
-| rs-alphabeta | Rust (FFI) | ~3.2 M | ~1.3× |
-| py-alphabeta | Python (FFI) | ~0.13 M | **~31×** |
+| engine | language | reuse path | NPS | tax vs C++ |
+|---|---|---|---|---|
+| cpp-alphabeta | C++ | native (inlined) | ~4.3 M | 1.0× (baseline) |
+| rs-alphabeta | Rust | native FFI | ~2.3 M | ~1.8× |
+| js-alphabeta | JavaScript (Node) | WASM | ~1.8 M | ~2.3× |
+| py-alphabeta | Python | ctypes FFI | ~0.20 M | **~21×** |
 
-Compiled languages cluster near the baseline; the interpreter pays the whole tax. Every run:
-**0 protocol errors / timeouts / illegal moves**; fixed-node mode is bit-reproducible.
+The three compiled/near-native engines cluster within ~2.3×; **even JavaScript stays near the
+pack because its hot path runs in WebAssembly** — the interpreter (Python) is the lone outlier
+paying the whole tax. Every run: **0 protocol errors / timeouts / illegal moves**; fixed-node
+mode is bit-reproducible.
 
 ### Group Stage → Knockout — the World Cup
 
-Seven engines across three languages and four paradigms play a round robin (`nodes 8000`):
+Eight engines across four languages and four paradigms play a round robin (`nodes 8000`):
 
 | # | Team | Lang | Score % | note |
 |---|---|---|---|---|
-| 1–3 | cpp / rs / py-alphabeta | C++ / Rust / Python | **83 %** (tie) | same algorithm ⇒ at *equal nodes* language doesn't matter |
-| 4 | py-mcts | Python | 46 % | the knowledge pole, mid-table |
-| 5 | random | C++ | 21 % | the anchor — still beats *both* greedy bots |
-| 6–7 | cpp / py-greedy | C++ / Python | 17 % | depth-1 greedy shuffles into draws & gets punished |
+| 1–4 | cpp / rs / js / py-alphabeta | C++ / Rust / JS / Python | **79 %** (four-way tie) | same algorithm ⇒ at *equal nodes* language doesn't matter |
+| 5 | py-mcts | Python | 39 % | the knowledge pole, mid-table |
+| 6 | random | C++ | 18 % | the anchor — still beats *both* greedy bots |
+| 7–8 | cpp / py-greedy | C++ / Python | 14 % | depth-1 greedy shuffles into draws & gets punished |
 
-The three alpha-betas finishing **dead level** is the headline: strip away the clock and
-C++, Rust and Python are indistinguishable. The top seeds then enter a single-elimination
-**knockout** (`analysis/run_bracket.py`); with the finalists so evenly matched, the
-Semifinal and Final went to all-draw tie-breaks and **`rs-alphabeta`** lifted the trophy —
-`py-alphabeta` (Python) reaching the Final. The bracket and every knockout game are viewable
-in the UI's 🏟️ Bracket and 📺 Broadcast tabs.
+**All four alpha-betas finishing dead level** is the headline: strip away the clock and C++,
+Rust, JavaScript and Python are indistinguishable. The seeds then enter a single-elimination
+**knockout** (`analysis/run_bracket.py`); with the finalists so evenly matched, the Semifinal
+and Final went to all-draw tie-breaks and **`rs-alphabeta`** lifted the trophy. The bracket
+fills in **live** in the UI's 🏟️ Bracket tab (▶ Run knockout live), and every knockout game
+is replayable in 📺 Broadcast.
 
 *(The earlier `cpp-alphabeta` vs `py-mcts` run — knowledge pole vs speed pole — is preserved
 in git history; it conflated algorithm and language, which is why the same-algorithm pairs
@@ -248,7 +253,8 @@ event contracts** derived from the results.
 - **🏆 Standings** — engine "teams" with flag, language badge, W-D-L, points, score %, NPS,
   latency and tax percentiles, per event (including the round-robin group stage).
 - **🏟️ Bracket** — the single-elimination knockout: seeds, per-tie scores, winners advancing,
-  and the champion.
+  and the champion. On the live server, **▶ Run knockout live** streams a fresh bracket that
+  fills in round-by-round as ties resolve.
 - **✅ Gates** — the five verification gates with pass/fail and key numbers.
 - **📈 Markets** — an automated market maker (LMSR) over contracts like *"cpp-alphabeta wins
   the Wall-Clock Duel"* and *"the language tax is real"*. Play money, price history, then
@@ -306,6 +312,7 @@ Requires a C++20 compiler and CMake ≥ 3.16.
 /shim/py           UCI shim, Python (ctypes + FFI board)   (built ✅)
 /bots/cpp-alphabeta  classical alpha-beta — the speed pole (built ✅)
 /bots/rs-alphabeta   same alpha-beta in Rust (C-ABI FFI)   (built ✅)
+/bots/js-alphabeta   same alpha-beta in Node (WASM core)   (built ✅)
 /bots/py-alphabeta   same alpha-beta in Python — tax probe (built ✅)
 /bots/py-mcts        Python MCTS — the knowledge pole      (built ✅)
 /bots/cpp-greedy     depth-1 greedy (C++)                  (built ✅)

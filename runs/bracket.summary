@@ -1,0 +1,13 @@
+  rs-alphabeta 4.0 - 0.0 cpp-greedy  -> rs-alphabeta
+  cpp-alphabeta 4.0 - 0.0 py-mcts  -> cpp-alphabeta
+  py-alphabeta 4.0 - 0.0 py-greedy  -> py-alphabeta
+  js-alphabeta 4.0 - 0.0 random  -> js-alphabeta
+[Quarterfinals] done
+  rs-alphabeta 2.0 - 2.0 cpp-alphabeta  -> rs-alphabeta
+  py-alphabeta 2.0 - 2.0 js-alphabeta  -> py-alphabeta
+[Semifinals] done
+  rs-alphabeta 2.0 - 2.0 py-alphabeta  -> rs-alphabeta
+[Final] done
+
+🏆 CHAMPION: rs-alphabeta
+wrote runs/bracket.json and runs/knockout.jsonl

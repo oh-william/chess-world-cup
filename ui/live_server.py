@@ -27,6 +27,7 @@ ENGINES = {
     "random":        [os.path.join(ROOT, "build", "random")],
     "cpp-greedy":    [os.path.join(ROOT, "build", "cpp-greedy")],
     "rs-alphabeta":  [os.path.join(ROOT, "bots", "rs-alphabeta", "target", "release", "rs-alphabeta")],
+    "js-alphabeta":  [os.path.join(ROOT, "bots", "js-alphabeta", "js-alphabeta")],
     "py-mcts":       [os.path.join(ROOT, "bots", "py-mcts", "py-mcts")],
     "py-alphabeta":  [os.path.join(ROOT, "bots", "py-alphabeta", "py-alphabeta")],
     "py-greedy":     [os.path.join(ROOT, "bots", "py-greedy", "py-greedy")],
@@ -34,6 +35,7 @@ ENGINES = {
 ENGINE_META = {
     "cpp-alphabeta": {"lang": "C++", "country": "DE", "color": "#e63946"},
     "rs-alphabeta":  {"lang": "Rust", "country": "SE", "color": "#dea584"},
+    "js-alphabeta":  {"lang": "JavaScript", "country": "US", "color": "#f7df1e"},
     "py-mcts":       {"lang": "Python", "country": "BR", "color": "#2a9d8f"},
     "py-alphabeta":  {"lang": "Python", "country": "BR", "color": "#f4a261"},
     "cpp-greedy":    {"lang": "C++", "country": "DE", "color": "#e76f51"},
@@ -42,6 +44,34 @@ ENGINE_META = {
 }
 
 STATE = {"proc": None, "cfg": {}, "gen": 0, "lock": threading.Lock()}
+GROUP_JSONL = os.path.join(ROOT, "runs", "group.jsonl")
+BRACKET_LOG = os.path.join(ROOT, "runs", "bracket_live.jsonl")
+BSTATE = {"proc": None, "gen": 0, "lock": threading.Lock()}
+
+
+def start_bracket(budget, games):
+    with BSTATE["lock"]:
+        if BSTATE["proc"] and BSTATE["proc"].poll() is None:
+            BSTATE["proc"].terminate()
+            try:
+                BSTATE["proc"].wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                BSTATE["proc"].kill()
+        open(BRACKET_LOG, "w").close()
+        argv = ["python3", os.path.join(ROOT, "analysis", "run_bracket.py"),
+                "--from-group", GROUP_JSONL, "--mode", "nodes",
+                "--budget", str(budget), "--games", str(games),
+                "--progress", BRACKET_LOG,
+                "--out-jsonl", os.path.join(ROOT, "runs", "knockout_live.jsonl"),
+                "--out-bracket", os.path.join(ROOT, "runs", "bracket_live.json")]
+        BSTATE["proc"] = subprocess.Popen(argv, stdout=subprocess.DEVNULL,
+                                          stderr=subprocess.DEVNULL, cwd=ROOT)
+        BSTATE["gen"] += 1
+
+
+def bracket_running():
+    p = BSTATE["proc"]
+    return p is not None and p.poll() is None
 
 
 def start_match(cfg):
@@ -97,6 +127,13 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 return self._json({"error": "unknown engine"}, 400)
             start_match(cfg)
             return self._json({"ok": True, "cfg": cfg})
+        if self.path == "/api/bracket-start":
+            if not os.path.exists(GROUP_JSONL):
+                return self._json({"error": "no group.jsonl — run the group stage first"}, 400)
+            n = int(self.headers.get("Content-Length", 0))
+            req = json.loads(self.rfile.read(n) or b"{}")
+            start_bracket(int(req.get("budget", 12000)), int(req.get("games", 4)))
+            return self._json({"ok": True})
         self.send_error(404)
 
     def do_GET(self):
@@ -105,8 +142,42 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                                "cfg": STATE["cfg"], "running": match_running()})
         if self.path == "/api/stream":
             return self.stream()
+        if self.path == "/api/bracket-stream":
+            return self.bracket_stream()
         # static files from ui/
         return super().do_GET()
+
+    def bracket_stream(self):
+        try:
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            gen = BSTATE["gen"]
+            pos = 0
+            done_sent = False
+            while True:
+                if BSTATE["gen"] != gen:
+                    gen = BSTATE["gen"]; pos = 0; done_sent = False
+                    self._sse("reset", {})
+                size = os.path.getsize(BRACKET_LOG) if os.path.exists(BRACKET_LOG) else 0
+                if size < pos:
+                    pos = 0; done_sent = False; self._sse("reset", {})
+                if os.path.exists(BRACKET_LOG):
+                    with open(BRACKET_LOG) as f:
+                        f.seek(pos)
+                        line = f.readline()
+                        if line and line.endswith("\n"):
+                            pos = f.tell()
+                            rec = json.loads(line)
+                            self._sse(rec.get("type", "tie_result"), rec)
+                            continue
+                if not bracket_running() and not done_sent:
+                    self._sse("done", {}); done_sent = True
+                self.wfile.write(b": keepalive\n\n"); self.wfile.flush()
+                time.sleep(0.15)
+        except (BrokenPipeError, ConnectionResetError):
+            return
 
     def stream(self):
         try:

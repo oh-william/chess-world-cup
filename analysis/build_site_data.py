@@ -38,6 +38,7 @@ def positions_for(mv):
 ENGINE_META = {
     "cpp-alphabeta": {"lang": "C++", "family": "alpha-beta", "color": "#e63946"},
     "rs-alphabeta":  {"lang": "Rust", "family": "alpha-beta", "color": "#dea584"},
+    "js-alphabeta":  {"lang": "JavaScript", "family": "alpha-beta", "color": "#f7df1e"},
     "py-alphabeta":  {"lang": "Python", "family": "alpha-beta", "color": "#f4a261"},
     "py-mcts":       {"lang": "Python", "family": "MCTS", "color": "#2a9d8f"},
     "cpp-greedy":    {"lang": "C++", "family": "greedy", "color": "#e76f51"},

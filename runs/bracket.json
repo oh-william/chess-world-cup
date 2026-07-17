@@ -10,22 +10,26 @@
   },
   {
    "seed": 3,
-   "engine": "cpp-alphabeta"
+   "engine": "js-alphabeta"
   },
   {
    "seed": 4,
-   "engine": "py-mcts"
+   "engine": "cpp-alphabeta"
   },
   {
    "seed": 5,
-   "engine": "random"
+   "engine": "py-mcts"
   },
   {
    "seed": 6,
-   "engine": "py-greedy"
+   "engine": "random"
   },
   {
    "seed": 7,
+   "engine": "py-greedy"
+  },
+  {
+   "seed": 8,
    "engine": "cpp-greedy"
   }
  ],
@@ -35,27 +39,27 @@
    "ties": [
     {
      "a": "rs-alphabeta",
-     "b": "BYE",
+     "b": "cpp-greedy",
      "seedA": 1,
      "seedB": 8,
-     "scoreA": null,
-     "scoreB": null,
+     "scoreA": 4.0,
+     "scoreB": 0.0,
      "winner": "rs-alphabeta",
-     "bye": true
+     "bye": false
     },
     {
-     "a": "py-mcts",
-     "b": "random",
+     "a": "cpp-alphabeta",
+     "b": "py-mcts",
      "seedA": 4,
      "seedB": 5,
-     "scoreA": 3.5,
-     "scoreB": 0.5,
-     "winner": "py-mcts",
+     "scoreA": 4.0,
+     "scoreB": 0.0,
+     "winner": "cpp-alphabeta",
      "bye": false
     },
     {
      "a": "py-alphabeta",
-     "b": "cpp-greedy",
+     "b": "py-greedy",
      "seedA": 2,
      "seedB": 7,
      "scoreA": 4.0,
@@ -64,13 +68,13 @@
      "bye": false
     },
     {
-     "a": "cpp-alphabeta",
-     "b": "py-greedy",
+     "a": "js-alphabeta",
+     "b": "random",
      "seedA": 3,
      "seedB": 6,
      "scoreA": 4.0,
      "scoreB": 0.0,
-     "winner": "cpp-alphabeta",
+     "winner": "js-alphabeta",
      "bye": false
     }
    ]
@@ -80,17 +84,17 @@
    "ties": [
     {
      "a": "rs-alphabeta",
-     "b": "py-mcts",
+     "b": "cpp-alphabeta",
      "seedA": 1,
      "seedB": 4,
-     "scoreA": 4.0,
-     "scoreB": 0.0,
+     "scoreA": 2.0,
+     "scoreB": 2.0,
      "winner": "rs-alphabeta",
      "bye": false
     },
     {
      "a": "py-alphabeta",
-     "b": "cpp-alphabeta",
+     "b": "js-alphabeta",
      "seedA": 2,
      "seedB": 3,
      "scoreA": 2.0,
