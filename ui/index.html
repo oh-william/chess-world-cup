@@ -17,6 +17,7 @@
   </div>
   <nav id="tabs">
     <button data-tab="broadcast" class="active">📺 Broadcast</button>
+    <button data-tab="live">🔴 Live</button>
     <button data-tab="standings">🏆 Standings</button>
     <button data-tab="gates">✅ Gates</button>
     <button data-tab="markets">📈 Markets</button>
@@ -55,6 +56,43 @@
         </div>
         <div class="telemetry" id="telemetry"></div>
         <div class="movelist" id="movelist"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- LIVE -->
+  <section id="live" class="tab">
+    <div id="live-unavailable" class="section-intro" style="display:none">
+      Live streaming needs the live server. Run <code>python3 ui/live_server.py</code> from the
+      repo root and reload this page.
+    </div>
+    <div id="live-main" style="display:none">
+      <div class="live-controls">
+        <label>White <select id="live-e1"></select></label>
+        <label>Black <select id="live-e2"></select></label>
+        <label>Mode <select id="live-mode"><option value="movetime">movetime</option><option value="nodes">nodes</option></select></label>
+        <label>Budget <input id="live-budget" type="number" value="250" style="width:80px"></label>
+        <label>Games <input id="live-games" type="number" value="6" style="width:60px"></label>
+        <button id="live-start" class="live-go">▶ Start new match</button>
+        <span id="live-status" class="live-status"></span>
+      </div>
+      <div class="broadcast-grid">
+        <div class="board-col">
+          <div class="plate" id="live-plate-top"></div>
+          <div id="live-board" class="board"></div>
+          <div class="plate" id="live-plate-bottom"></div>
+          <div class="live-nowline" id="live-nowline"></div>
+        </div>
+        <div class="side-col">
+          <div class="tax-meter">
+            <div class="tax-label">live implementation tax this game (orch − self)</div>
+            <div class="tax-bar"><div id="live-tax-fill"></div></div>
+            <div id="live-tax-value" class="tax-value"></div>
+          </div>
+          <div class="telemetry" id="live-telemetry"></div>
+          <div class="live-scoreline" id="live-scoreline"></div>
+          <div class="movelist" id="live-ticker"></div>
+        </div>
       </div>
     </div>
   </section>

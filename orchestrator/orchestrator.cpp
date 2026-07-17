@@ -315,6 +315,7 @@ int main(int argc, char** argv) {
                 << ",\"delta_ms\":" << delta
                 << ",\"self_nodes\":" << mr.self_nodes
                 << ",\"fen\":\"" << fen_before << "\"}\n";
+            log.flush(); // flush per move so a live tail streams in real time
 
             board.make_move(m);
             moves.push_back(mr.uci);
@@ -339,6 +340,7 @@ int main(int argc, char** argv) {
             << ",\"result\":\"" << result_str(res) << "\""
             << ",\"reason\":\"" << reason << "\""
             << ",\"plies\":" << moves.size() << "}\n";
+        log.flush();
 
         std::printf("game %3d  %-8s(W) vs %-8s(B)  %-8s  %zu plies (%s)\n",
                     g, white.name.c_str(), black.name.c_str(),

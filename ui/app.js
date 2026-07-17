@@ -52,8 +52,8 @@ function squareEls(fen, hlFrom, hlTo) {
   }
   return cells;
 }
-function renderBoard(fen, uci) {
-  const board = document.getElementById("board");
+function renderBoard(fen, uci, id = "board") {
+  const board = document.getElementById(id);
   board.innerHTML = "";
   const from = uci ? uci.slice(0, 2) : null, to = uci ? uci.slice(2, 4) : null;
   squareEls(fen, from, to).forEach(c => board.appendChild(c));
@@ -327,6 +327,105 @@ function renderMarkets() {
   }
 }
 
+// ---------- live streaming ----------
+const LIVE = { es: null, meta: {}, init: false, game: null, tally: {}, results: [] };
+function liveEngineOf(name) {
+  return LIVE.meta[name] || (DATA && DATA.engines[name]) || { lang: "?", country: "XX", color: "#888" };
+}
+function livePlate(name, side) {
+  const e = liveEngineOf(name);
+  return `<span class="flag">${codeToFlag(e.country)}</span>
+    <span class="dot" style="background:${e.color}"></span>
+    <span class="who">${name || "—"}</span><span class="lang">${e.lang}</span>
+    <span class="side">${side}</span>`;
+}
+function id(x) { return document.getElementById(x); }
+function liveReset() {
+  LIVE.game = { white: null, black: null, ply: 0, tax: 0, orch: 0 };
+  id("live-board").innerHTML = ""; id("live-ticker").innerHTML = "";
+  id("live-telemetry").innerHTML = "";
+  id("live-plate-top").innerHTML = livePlate(null, "black");
+  id("live-plate-bottom").innerHTML = livePlate(null, "white");
+  id("live-nowline").textContent = ""; id("live-tax-fill").style.width = "0%";
+  id("live-tax-value").textContent = "";
+}
+function liveMove(r) {
+  if (!LIVE.game) liveReset();
+  const g = LIVE.game;
+  if (r.color === "w") { g.white = r.engine; id("live-plate-bottom").innerHTML = livePlate(r.engine, "white"); }
+  else { g.black = r.engine; id("live-plate-top").innerHTML = livePlate(r.engine, "black"); }
+  renderBoard(r.fen, r.move, "live-board");
+  g.tax += r.delta_ms; g.orch += r.orch_ms; g.ply = r.ply + 1;
+  const pctOf = g.orch > 0 ? g.tax / g.orch * 100 : 0;
+  id("live-tax-fill").style.width = Math.min(100, pctOf) + "%";
+  id("live-tax-value").textContent = `${g.tax} ms tax over ${g.orch} ms wall (${pctOf.toFixed(1)}%)`;
+  const nps = r.self_ms > 0 ? Math.round(r.self_nodes / (r.self_ms / 1000)) : null;
+  id("live-telemetry").innerHTML = [["move", r.move], ["by", r.engine],
+    ["nodes", r.self_nodes.toLocaleString()], ["nps", nps ? (nps / 1e6).toFixed(2) + "M" : "—"],
+    ["orch ms", r.orch_ms], ["tax Δ ms", r.delta_ms]]
+    .map(([k, v]) => `<div class="tcard"><div class="k">${k}</div><div class="v">${v}</div></div>`).join("");
+  const ml = id("live-ticker");
+  if (r.ply % 2 === 0) ml.appendChild(el("span", "num", (r.ply / 2 + 1) + "."));
+  ml.appendChild(el("span", "mv", r.move));
+  ml.scrollTop = ml.scrollHeight;
+  id("live-nowline").textContent = `${g.white || "—"} (W) vs ${g.black || "—"} (B) · ply ${g.ply}`;
+}
+function liveResult(r) {
+  const t = LIVE.tally;
+  t[r.white] = t[r.white] || 0; t[r.black] = t[r.black] || 0;
+  if (r.result === "1-0") t[r.white]++; else if (r.result === "0-1") t[r.black]++;
+  else { t[r.white] += 0.5; t[r.black] += 0.5; }
+  LIVE.results.push(r);
+  const score = Object.keys(t).map(n => `${n} <b>${t[n]}</b>`).join("  ·  ");
+  id("live-scoreline").innerHTML = `<div class="score-head">running score — ${score}</div>` +
+    LIVE.results.slice(-8).reverse().map(x =>
+      `<div class="score-row">game ${x.game}: ${x.white} vs ${x.black} → <b>${x.result}</b>
+       <span class="reason">(${x.reason}, ${x.plies}p)</span></div>`).join("");
+  LIVE.game = null;
+}
+function liveConnect() {
+  if (LIVE.es) LIVE.es.close();
+  liveReset(); LIVE.tally = {}; LIVE.results = []; id("live-scoreline").innerHTML = "";
+  const es = new EventSource("/api/stream"); LIVE.es = es;
+  es.addEventListener("config", e => {
+    const c = JSON.parse(e.data);
+    if (c.engine_meta) LIVE.meta = c.engine_meta;
+    if (c.engine1) id("live-status").textContent = `🔴 streaming ${c.engine1} vs ${c.engine2}`;
+  });
+  es.addEventListener("move", e => liveMove(JSON.parse(e.data)));
+  es.addEventListener("result", e => liveResult(JSON.parse(e.data)));
+  es.addEventListener("reset", () => { liveReset(); LIVE.tally = {}; LIVE.results = []; id("live-scoreline").innerHTML = ""; });
+  es.addEventListener("done", () => { id("live-status").textContent = "✓ match complete"; });
+}
+async function startLiveMatch() {
+  const body = {
+    engine1: id("live-e1").value, engine2: id("live-e2").value,
+    mode: id("live-mode").value, budget: +id("live-budget").value, games: +id("live-games").value,
+  };
+  id("live-status").textContent = "starting…";
+  await fetch("/api/start", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+}
+async function initLive() {
+  if (LIVE.init) return; LIVE.init = true;
+  let cfg;
+  try { cfg = await (await fetch("/api/config")).json(); }
+  catch (e) { id("live-unavailable").style.display = "block"; return; }
+  id("live-main").style.display = "block";
+  LIVE.meta = cfg.engines || {};
+  const fill = (elId, sel) => {
+    const s = id(elId); s.innerHTML = "";
+    cfg.available.forEach(n => { const o = el("option", null, n); o.value = n; s.appendChild(o); });
+    if (sel) s.value = sel;
+  };
+  fill("live-e1", (cfg.cfg || {}).engine1 || "cpp-alphabeta");
+  fill("live-e2", (cfg.cfg || {}).engine2 || "py-mcts");
+  if (cfg.cfg && cfg.cfg.mode) id("live-mode").value = cfg.cfg.mode;
+  if (cfg.cfg && cfg.cfg.budget) id("live-budget").value = cfg.cfg.budget;
+  if (cfg.cfg && cfg.cfg.games) id("live-games").value = cfg.cfg.games;
+  id("live-start").onclick = startLiveMatch;
+  liveConnect();
+}
+
 // ---------- boot ----------
 function initTabs() {
   document.querySelectorAll("#tabs button").forEach(btn => {
@@ -335,6 +434,7 @@ function initTabs() {
       document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
       btn.classList.add("active");
       document.getElementById(btn.dataset.tab).classList.add("active");
+      if (btn.dataset.tab === "live") initLive();
     };
   });
 }

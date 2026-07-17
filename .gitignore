@@ -6,3 +6,4 @@ build/
 runs/*.jsonl
 __pycache__/
 *.pyc
+runs/live.jsonl
