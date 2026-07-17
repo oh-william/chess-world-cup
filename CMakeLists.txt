@@ -12,8 +12,22 @@ set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG")
 add_library(libchess STATIC
   libchess/src/bitboard.cpp
   libchess/src/board.cpp
+  libchess/src/uci.cpp
 )
 target_include_directories(libchess PUBLIC libchess/include)
+
+# C++ UCI shim — bots link this and implement meta()/search().
+add_library(shim_cpp STATIC shim/cpp/shim.cpp)
+target_include_directories(shim_cpp PUBLIC shim/cpp)
+target_link_libraries(shim_cpp PUBLIC libchess)
+
+# Engines.
+add_executable(random bots/random/random.cpp)
+target_link_libraries(random PRIVATE shim_cpp)
+
+# Orchestrator.
+add_executable(orchestrator orchestrator/orchestrator.cpp orchestrator/process.cpp)
+target_link_libraries(orchestrator PRIVATE libchess)
 
 enable_testing()
 add_executable(perft tests/perft.cpp)

@@ -79,7 +79,7 @@ clean 100-game match with honest latency logs and no JIT contamination.
 | Gate | What it proves | Status |
 |---|---|---|
 | **1 — perft** | movegen is exact to the node | ✅ **green** |
-| 2 — protocol conformance | `random` survives 100 self-games, zero errors | ⬜ not started |
+| **2 — protocol conformance** | `random` survives 100 self-games, zero errors | ✅ **green** |
 | 3 — warm-up isolation | NPS curve flat over moves 1–20 | ⬜ not started |
 | 4 — timing honesty | orchestrator−self delta small & stable | ⬜ not started |
 | 5 — the experiment in miniature | rank flips between fixed-node and wall-clock | ⬜ not started |
@@ -111,6 +111,33 @@ position3  8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1
 legality-filtered make/unmake perft, not a bulk-counting perft — it exercises the exact
 make/unmake path a search will use.
 
+### Gate 2 results (protocol conformance)
+
+`random` (uniform random legal move) played **100 games against itself** through the full
+harness — persistent processes, warm-up, UCI over pipes, orchestrator as referee:
+
+```
+games completed : 100 / 100
+protocol errors : 0
+timeouts        : 0
+illegal moves   : 0
+GATE 2: PASS
+```
+
+The orchestrator is the referee (validates every move against `libchess`, adjudicates
+mate/stalemate/50-move/repetition/insufficient-material) and the timekeeper (monotonic
+`go → bestmove`). It writes a per-move JSONL log whose key column is the implementation
+tax, `delta_ms = orch_ms − self_ms`. With identical seeds, move sequences are
+**bit-reproducible** across runs (only timing varies).
+
+```bash
+# random vs random, 100 games, 20ms/move
+./build/orchestrator --engine1 ./build/random --engine2 ./build/random \
+    --games 100 --movetime 20 --log match.jsonl
+# fixed-node mode instead:
+./build/orchestrator ... --nodes 100000
+```
+
 ---
 
 ## Build & run
@@ -129,17 +156,17 @@ Requires a C++20 compiler and CMake ≥ 3.16.
 ## Repo layout
 
 ```
-/libchess          C++ bitboard core, C ABI exports (Gate 1 ✅)
-/shim/cpp          UCI shim, C++            (Phase 0, not started)
-/shim/py           UCI shim, Python        (Phase 0, not started)
-/bots/cpp-alphabeta  classical alpha-beta — the speed pole
-/bots/py-mcts        Python MCTS — the knowledge pole
-/bots/random         uniform random — Elo anchor & protocol canary
-/orchestrator      match runner, timing, logging
-/analysis          NPS bench, latency tables, language-tax report
-/books             forced opening book (EPD/PGN)
-/tests             perft suite (perft.cpp), protocol conformance
-/docker            one Dockerfile per bot + base images
+/libchess          C++ bitboard core + UCI move helpers   (Gate 1 ✅)
+/shim/cpp          UCI shim, C++                           (built ✅)
+/shim/py           UCI shim, Python                        (not started)
+/bots/cpp-alphabeta  classical alpha-beta — the speed pole (not started)
+/bots/py-mcts        Python MCTS — the knowledge pole      (not started)
+/bots/random         uniform random — Elo anchor & canary  (built ✅)
+/orchestrator      match runner, timing, logging, referee  (built ✅)
+/analysis          NPS bench, latency tables, language-tax report (not started)
+/books             forced opening book (UCI move lists)    (openings.txt ✅)
+/tests             perft suite (perft.cpp)                 (Gate 1 ✅)
+/docker            one Dockerfile per bot + base images    (not started)
 ```
 
 ---

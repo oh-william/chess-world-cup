@@ -134,6 +134,26 @@ std::string Board::fen() const {
     return ss.str();
 }
 
+bool Board::insufficient_material() const {
+    // Any pawn, rook, or queen means mate is still possible.
+    for (int c = 0; c < COLOR_NB; ++c)
+        if (pieces_[c][PAWN] | pieces_[c][ROOK] | pieces_[c][QUEEN]) return false;
+
+    int wN = popcount(pieces_[WHITE][KNIGHT]), wB = popcount(pieces_[WHITE][BISHOP]);
+    int bN = popcount(pieces_[BLACK][KNIGHT]), bB = popcount(pieces_[BLACK][BISHOP]);
+    int minors = wN + wB + bN + bB;
+
+    if (minors <= 1) return true;                       // KvK, K+minor vs K
+    if (minors == 2 && wB == 1 && bB == 1) {            // one bishop each
+        Square wsq = lsb(pieces_[WHITE][BISHOP]);
+        Square bsq = lsb(pieces_[BLACK][BISHOP]);
+        int wcol = (file_of(wsq) + rank_of(wsq)) & 1;
+        int bcol = (file_of(bsq) + rank_of(bsq)) & 1;
+        return wcol == bcol;                            // draw only if same color
+    }
+    return false;
+}
+
 bool Board::is_attacked(Square s, Color by) const {
     if (PawnAttacks[~by][s] & pieces_[by][PAWN]) return true;
     if (KnightAttacks[s] & pieces_[by][KNIGHT]) return true;
