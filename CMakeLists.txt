@@ -25,6 +25,10 @@ target_link_libraries(shim_cpp PUBLIC libchess)
 add_executable(random bots/random/random.cpp)
 target_link_libraries(random PRIVATE shim_cpp)
 
+add_executable(cpp-alphabeta bots/cpp-alphabeta/alphabeta.cpp)
+target_include_directories(cpp-alphabeta PRIVATE bots/cpp-alphabeta)
+target_link_libraries(cpp-alphabeta PRIVATE shim_cpp)
+
 # Orchestrator.
 add_executable(orchestrator orchestrator/orchestrator.cpp orchestrator/process.cpp)
 target_link_libraries(orchestrator PRIVATE libchess)

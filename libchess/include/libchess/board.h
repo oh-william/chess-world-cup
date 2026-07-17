@@ -48,6 +48,11 @@ public:
 
     PieceType piece_on(Square s, Color& out_color) const;
 
+    // Read-only access for engine evaluation.
+    Bitboard pieces(Color c, PieceType pt) const { return pieces_[c][pt]; }
+    Bitboard occupancy(Color c) const { return occ_[c]; }
+    Bitboard occupancy() const { return all_; }
+
 private:
     Bitboard pieces_[COLOR_NB][PIECE_TYPE_NB]{}; // per color, per type
     Bitboard occ_[COLOR_NB]{};
