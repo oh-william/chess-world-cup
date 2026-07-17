@@ -1,0 +1,159 @@
+#!/usr/bin/env python3
+"""py-alphabeta — a Python port of the SAME alpha-beta as cpp-alphabeta:
+iterative deepening + quiescence + MVV-LVA ordering, over the SAME handcrafted
+eval (via the C ABI). Same algorithm, same knowledge — only the language differs.
+
+That makes cpp-alphabeta vs py-alphabeta the cleanest possible language-tax probe:
+at equal *nodes* they play near-identically; at equal *wall-clock* C++ searches
+far deeper, and the whole gap is the language tax. Deterministic (no RNG), so
+fixed-node mode is bit-reproducible.
+"""
+import os
+import sys
+import time
+
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+    "shim", "py"))
+
+import shim  # noqa: E402
+from libchess_ffi import move_from, move_to, move_flag, move_promo  # noqa: E402
+
+INF = 1_000_000
+MATE = 30_000
+MAX_PLY = 64
+VAL = (100, 320, 330, 500, 900, 0)   # P N B R Q K
+EN_PASSANT, PROMOTION = 2, 1
+
+
+class Ctx:
+    __slots__ = ("nodes", "node_mode", "node_limit", "time_mode", "deadline", "stop")
+
+
+def move_score(board, m):
+    to = move_to(m)
+    victim = board.piece_at(to)
+    s = 0
+    if victim >= 0:
+        s += 100 * VAL[victim] - VAL[board.piece_at(move_from(m))]
+    fl = move_flag(m)
+    if fl == PROMOTION:
+        s += 100 * VAL[move_promo(m)]
+    elif fl == EN_PASSANT:
+        s += 100 * VAL[0]
+    return s
+
+
+def order(board, moves, hint):
+    return sorted(moves, key=lambda m: (INF if m == hint else move_score(board, m)),
+                  reverse=True)
+
+
+def is_capture(board, m):
+    return board.piece_at(move_to(m)) >= 0 or move_flag(m) == EN_PASSANT
+
+
+def check_budget(ctx):
+    # Sets ctx.stop; callers unwind normally (unmake always runs first), so the
+    # board is never left corrupted. Fixed-node mode never reads the clock.
+    if ctx.node_mode and ctx.nodes >= ctx.node_limit:
+        ctx.stop = True
+    elif ctx.time_mode and (ctx.nodes & 2047) == 0 and time.monotonic() >= ctx.deadline:
+        ctx.stop = True
+
+
+def quiesce(board, alpha, beta, ctx):
+    ctx.nodes += 1
+    check_budget(ctx)
+    if ctx.stop:
+        return alpha
+    stand = board.eval()
+    if stand >= beta:
+        return beta
+    if stand > alpha:
+        alpha = stand
+    for m in order(board, board.legal_moves(), 0):
+        if not is_capture(board, m) and move_flag(m) != PROMOTION:
+            continue
+        board.make(m)
+        score = -quiesce(board, -beta, -alpha, ctx)
+        board.unmake(m)
+        if ctx.stop:
+            return alpha
+        if score >= beta:
+            return beta
+        if score > alpha:
+            alpha = score
+    return alpha
+
+
+def negamax(board, depth, ply, alpha, beta, ctx):
+    check_budget(ctx)
+    if ctx.stop:
+        return 0
+    if depth <= 0:
+        return quiesce(board, alpha, beta, ctx)
+    ctx.nodes += 1
+    moves = board.legal_moves()
+    if not moves:
+        return -MATE + ply if board.in_check() else 0
+    best = -INF
+    for m in order(board, moves, 0):
+        board.make(m)
+        score = -negamax(board, depth - 1, ply + 1, -beta, -alpha, ctx)
+        board.unmake(m)
+        if ctx.stop:
+            return best if best > -INF else alpha
+        if score > best:
+            best = score
+        if score > alpha:
+            alpha = score
+        if alpha >= beta:
+            break
+    return best
+
+
+def search(board, limits):
+    ctx = Ctx()
+    ctx.nodes = 0
+    ctx.stop = False
+    ctx.node_mode = limits.nodes_left >= 0
+    ctx.node_limit = limits.nodes_left if ctx.node_mode else 0
+    ctx.time_mode = limits.ms_left >= 0
+    ctx.deadline = time.monotonic() + max(1, limits.ms_left - 5) / 1000.0 if ctx.time_mode else 0
+
+    root = board.legal_moves()
+    if not root:
+        return 0, 0
+    if len(root) == 1:
+        return root[0], 0
+
+    overall_best = root[0]
+    hint = 0
+    for depth in range(1, MAX_PLY):
+        alpha, beta, best_score, local_best = -INF, INF, -INF, 0
+        for m in order(board, root, hint):
+            board.make(m)
+            score = -negamax(board, depth - 1, 1, -beta, -alpha, ctx)
+            board.unmake(m)
+            if ctx.stop:
+                break
+            if score > best_score:
+                best_score, local_best = score, m
+            if score > alpha:
+                alpha = score
+        if ctx.stop:
+            break
+        overall_best = local_best
+        hint = local_best
+        if best_score >= MATE - MAX_PLY:
+            break
+    return overall_best, ctx.nodes
+
+
+def meta():
+    return {"name": "py-alphabeta", "lang": "Python", "family": "alpha-beta", "country": "BR"}
+
+
+if __name__ == "__main__":
+    sys.exit(shim.run(meta, search))

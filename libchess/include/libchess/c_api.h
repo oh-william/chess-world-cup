@@ -32,6 +32,9 @@ void     lc_unmake(lc_board b, uint16_t move);
 // Static eval (material + piece-square tables), side-to-move relative, centipawns.
 int      lc_eval(lc_board b);
 
+// Piece type (0=P..5=K) on a square, or -1 if empty (color-agnostic).
+int      lc_piece_at(lc_board b, int square);
+
 // Move <-> UCI. lc_move_to_uci writes into buf (>= 6 bytes). lc_move_from_uci
 // returns the packed move, or 0 (MOVE_NONE) if illegal/unparseable.
 void     lc_move_to_uci(uint16_t move, char* buf);

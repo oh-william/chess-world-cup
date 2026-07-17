@@ -34,6 +34,10 @@ add_executable(cpp-alphabeta bots/cpp-alphabeta/alphabeta.cpp)
 target_include_directories(cpp-alphabeta PRIVATE bots/cpp-alphabeta)
 target_link_libraries(cpp-alphabeta PRIVATE shim_cpp)
 
+add_executable(cpp-greedy bots/cpp-greedy/greedy.cpp)
+target_include_directories(cpp-greedy PRIVATE bots/cpp-alphabeta) # shares eval.h
+target_link_libraries(cpp-greedy PRIVATE shim_cpp)
+
 # Orchestrator.
 add_executable(orchestrator orchestrator/orchestrator.cpp orchestrator/process.cpp)
 target_link_libraries(orchestrator PRIVATE libchess)

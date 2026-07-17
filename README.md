@@ -177,33 +177,47 @@ measurable — expected for the anchor.)
 python3 analysis/report.py match.jsonl
 ```
 
-### Gate 5 results (`py-mcts` + the language-tax experiment)
+### Gate 5 results — the language tax, cleanly isolated
 
-`py-mcts` is the **knowledge pole**: UCT Monte-Carlo Tree Search with eval-guided leaf
-values (best-first search over the *same* handcrafted eval), written in Python and reusing
-the perft-clean core over a **C ABI** (`ctypes`). It cannot win on nodes/sec, so it must
-win on Elo-per-node.
+The purest way to measure a *language* tax is to hold the algorithm fixed. `py-alphabeta`
+runs the **same** iterative-deepening alpha-beta + quiescence over the **same** handcrafted
+eval as `cpp-alphabeta` — line for line the same search, reusing the perft-clean core over a
+**C ABI** (`ctypes`). The only difference is the language. So `cpp-alphabeta` vs
+`py-alphabeta`, 20 games at fixed nodes then 20 at fixed wall-clock (100 ms):
 
-The experiment: `cpp-alphabeta` vs `py-mcts`, **40 games at fixed nodes**, then **40 games
-at fixed wall-clock** (100 ms), same forced book, colors alternated.
-
-| | Fixed-Node (equal thinking budget) | Wall-Clock (equal time budget) |
+| | Fixed-Node (equal nodes) | Wall-Clock (equal time) |
 |---|---|---|
-| cpp-alphabeta score share | **96.2 %** (37–0–3) | **100 %** (40–0–0) |
-| py-mcts score share | 3.8 % (three draws) | 0 % |
-| cpp-alphabeta NPS | 1.44 M | 1.39 M |
-| py-mcts NPS | 0.33 M | 0.32 M |
+| cpp-alphabeta score share | **55 %** (3–1–16) | **72 %** (9–0–11) |
+| py-alphabeta score share | 45 % | 28 % |
+| cpp-alphabeta NPS | — | **1.68 M** |
+| py-alphabeta NPS | — | **0.15 M** |
 
-**The measurement:** py-mcts's only footholds — three draws at equal *nodes* — **evaporate
-when the budget becomes equal *time***, because Python + FFI runs at **~4.4× fewer
-nodes/sec** and gets starved. That widening gap, from a measured 4.4× speed penalty, is the
-**language tax** isolated for the first time on a field of two.
+**The measurement:** at equal *nodes* the two are a coin-flip (identical algorithm) — Python
+holds its own. Switch to equal *time* and C++ jumps to a **72 % score share**, because
+`py-alphabeta` runs at **11.4× fewer nodes/sec** and simply searches shallower in the same
+100 ms. That **17-point swing, from an 11.4× throughput penalty, is the language tax** — Elo
+lost purely to implementation, with algorithm and knowledge held constant. Every run: **0
+protocol errors / timeouts / illegal moves**; fixed-node mode is bit-reproducible.
 
-Honest caveat: the rank did **not** fully flip (C++ wins both), because vanilla UCT with
-averaging backups is weaker *per node* than alpha-beta in tactical chess — an algorithm gap
-that partly masks the language gap. The clean, defensible tax here is the **4.4× throughput
-penalty** and the score-share shift it drives. Both matches ran with **0 protocol errors /
-timeouts / illegal moves**, and fixed-node mode is bit-reproducible.
+*(The earlier `cpp-alphabeta` vs `py-mcts` run — knowledge pole vs speed pole — is preserved
+in git history; it conflated algorithm and language, which is exactly why this same-algorithm
+pair is the cleaner experiment.)*
+
+### Group Stage — a round-robin field
+
+Six engines across two languages and four paradigms play a round robin (`nodes 8000`):
+
+| # | Team | Lang | Score % | note |
+|---|---|---|---|---|
+| 1 | cpp-alphabeta | C++ | 90 % | the two alpha-betas tie at the top… |
+| 2 | py-alphabeta | Python | 90 % | …because at *equal nodes* language doesn't matter |
+| 3 | py-mcts | Python | 55 % | the knowledge pole, mid-table |
+| 4 | random | C++ | 25 % | the anchor — and it beats *both* greedy bots |
+| 5 | cpp-greedy | C++ | 20 % | depth-1 greedy oscillates into draws & gets punished |
+| 6 | py-greedy | Python | 20 % | same fate, other language |
+
+The surprise — greedy finishing *below* random — is real: a deterministic depth-1 grabber
+shuffles into repetitions and hangs pieces to the searchers, while random at least varies.
 
 ---
 
@@ -217,21 +231,30 @@ event contracts** derived from the results.
 
 - **📺 Broadcast** — pick an event + game, play/step/scrub through the board move-by-move,
   with a live *implementation-tax meter* (cumulative `orch − self` ms) and per-move telemetry.
+- **🔴 Live** — watch a match stream **in real time** over Server-Sent Events: the board
+  updates as each `bestmove` lands, the tax meter ticks up, and a running score builds. Pick
+  the two engines / mode / budget and hit *Start* to launch a fresh match from the browser.
 - **🏆 Standings** — engine "teams" with flag, language badge, W-D-L, points, score %, NPS,
-  latency and tax percentiles.
+  latency and tax percentiles, per event (including the round-robin group stage).
 - **✅ Gates** — the five verification gates with pass/fail and key numbers.
 - **📈 Markets** — an automated market maker (LMSR) over contracts like *"cpp-alphabeta wins
-  the Wall-Clock match"* and *"the language tax is real"*. Play money, price history, then
+  the Wall-Clock Duel"* and *"the language tax is real"*. Play money, price history, then
   **resolve** against the true tournament outcome.
 
 ```bash
-# 1. run some matches (writes runs/*.jsonl)
-./build/orchestrator --engine1 ./build/cpp-alphabeta --engine2 ./bots/py-mcts/py-mcts \
-    --games 40 --nodes 20000 --log runs/gate5_nodes.jsonl
-# 2. compile the logs into the site payload
+# --- LIVE: watch a match stream as it plays ---
+python3 ui/live_server.py      # -> http://localhost:8000, use the 🔴 Live tab
+
+# --- REPLAY: compile finished matches into the static site ---
+# 1. run matches (writes runs/*.jsonl) — or a whole round robin:
+python3 analysis/run_tournament.py \
+    --engines cpp-alphabeta,py-alphabeta,py-mcts,cpp-greedy,py-greedy,random \
+    --mode nodes --budget 8000 --games 2 --out runs/group.jsonl
+# 2. compile logs into the site payload
 python3 analysis/build_site_data.py \
-    --event fixed-node "Fixed-Node Match" runs/gate5_nodes.jsonl \
-    --event wall-clock "Wall-Clock Match" runs/gate5_time.jsonl \
+    --event fixed-node "Fixed-Node Duel" runs/tax_nodes.jsonl \
+    --event wall-clock "Wall-Clock Duel" runs/tax_time.jsonl \
+    --event group-stage "Group Stage"   runs/group.jsonl \
     --out ui/data/tournament.json
 # 3. serve it
 python3 ui/serve.py            # -> http://localhost:8000
@@ -262,14 +285,17 @@ Requires a C++20 compiler and CMake ≥ 3.16.
 /shim/cpp          UCI shim, C++                           (built ✅)
 /shim/py           UCI shim, Python (ctypes + FFI board)   (built ✅)
 /bots/cpp-alphabeta  classical alpha-beta — the speed pole (built ✅)
+/bots/py-alphabeta   same alpha-beta in Python — tax probe (built ✅)
 /bots/py-mcts        Python MCTS — the knowledge pole      (built ✅)
+/bots/cpp-greedy     depth-1 greedy (C++)                  (built ✅)
+/bots/py-greedy      depth-1 greedy (Python)               (built ✅)
 /bots/random         uniform random — Elo anchor & canary  (built ✅)
 /orchestrator      match runner, timing, logging, referee  (built ✅)
-/analysis          NPS/latency/tax report + site builder   (built ✅)
+/analysis          report + site builder + tournament run  (built ✅)
 /books             forced opening book (UCI move lists)    (openings.txt ✅)
 /tests             perft suite (perft.cpp)                 (Gate 1 ✅)
 /docker            one Dockerfile per bot + base image      (scaffold ✅)
-/ui                spectator UI + LMSR markets (static)     (built ✅)
+/ui                spectator UI, live SSE server, markets   (built ✅)
 ```
 
 ---

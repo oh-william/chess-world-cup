@@ -80,6 +80,12 @@ int lc_eval(lc_board b) {
     return bd->side_to_move() == WHITE ? score : -score;
 }
 
+int lc_piece_at(lc_board b, int square) {
+    Color c;
+    PieceType pt = static_cast<Board*>(b)->piece_on(Square(square), c);
+    return pt == NO_PIECE_TYPE ? -1 : int(pt);
+}
+
 void lc_move_to_uci(uint16_t move, char* buf) {
     std::string s = to_uci(move);
     std::strncpy(buf, s.c_str(), 5);

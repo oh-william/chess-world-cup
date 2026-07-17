@@ -1,0 +1,34 @@
+#!/usr/bin/env python3
+"""py-greedy — depth-1 eval greedy in Python (same rule as cpp-greedy, over the
+shared C-ABI eval). A field engine and a second same-algorithm/two-language pair.
+"""
+import os
+import sys
+
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+    "shim", "py"))
+
+import shim  # noqa: E402
+
+
+def search(board, limits):
+    moves = board.legal_moves()
+    if not moves:
+        return 0, 0
+    best, best_move = -10**9, moves[0]
+    for m in moves:
+        board.make(m)
+        score = -board.eval()          # opponent-relative after our move
+        board.unmake(m)
+        if score > best:
+            best, best_move = score, m
+    return best_move, len(moves)
+
+
+def meta():
+    return {"name": "py-greedy", "lang": "Python", "family": "greedy", "country": "BR"}
+
+
+if __name__ == "__main__":
+    sys.exit(shim.run(meta, search))

@@ -37,7 +37,10 @@ def positions_for(mv):
 # Presentation metadata for the engines we ship (World-Cup flavour).
 ENGINE_META = {
     "cpp-alphabeta": {"lang": "C++", "family": "alpha-beta", "color": "#e63946"},
+    "py-alphabeta":  {"lang": "Python", "family": "alpha-beta", "color": "#f4a261"},
     "py-mcts":       {"lang": "Python", "family": "MCTS", "color": "#2a9d8f"},
+    "cpp-greedy":    {"lang": "C++", "family": "greedy", "color": "#e76f51"},
+    "py-greedy":     {"lang": "Python", "family": "greedy", "color": "#8ab17d"},
     "random":        {"lang": "C++", "family": "random", "color": "#8d99ae"},
 }
 
@@ -130,52 +133,71 @@ def engine_score(standings, name):
     return (s["w"] + 0.5 * s["d"]) / s["games"] if s["games"] else 0.0
 
 
-def build_markets(events_by_id):
+def _by_lang(meta, names, lang):
+    for n in names:
+        if meta.get(n, {}).get("lang") == lang:
+            return n
+    return None
+
+
+def build_markets(events_by_id, meta):
     """Kalshi-style event contracts derived from the tournament, with the
     ground-truth outcome for resolution."""
     markets = []
     fn = events_by_id.get("fixed-node")
     wc = events_by_id.get("wall-clock")
 
-    def winner(ev):
-        st_ = ev["standings"]
-        a, b = ev["engines"][0], ev["engines"][1]
-        sa, sb = engine_score({k: st_[k] for k in st_}, a), engine_score(st_, b)
-        return (a if sa > sb else b if sb > sa else None), sa, sb
+    # Duel markets: does the C++ engine finish above 50%?
+    for ev in (fn, wc):
+        if not ev or len(ev["engines"]) != 2:
+            continue
+        cpp = _by_lang(meta, ev["engines"], "C++") or ev["engines"][0]
+        share = engine_score(ev["standings"], cpp)
+        markets.append({
+            "id": f"{ev['id']}-cpp-wins", "event": ev["label"],
+            "label": f"{cpp} wins the {ev['label']}",
+            "desc": f"Same algorithm, two languages. Resolves YES if {cpp} scores "
+                    f"over 50% here. (Fixed-node should be a coin-flip; wall-clock shouldn't.)",
+            "outcome": "YES" if share > 0.5 else "NO"})
 
-    if fn:
-        w, sa, sb = winner(fn)
-        markets.append({
-            "id": "fn-cpp-wins", "event": "Fixed-Node Match",
-            "label": "cpp-alphabeta wins the Fixed-Node match",
-            "desc": "Resolves YES if cpp-alphabeta scores more than py-mcts at equal node budget.",
-            "outcome": "YES" if fn["standings"]["cpp-alphabeta"]["w"] >
-                        fn["standings"]["py-mcts"]["w"] else "NO"})
-    if wc:
-        markets.append({
-            "id": "wc-cpp-wins", "event": "Wall-Clock Match",
-            "label": "cpp-alphabeta wins the Wall-Clock match",
-            "desc": "Resolves YES if cpp-alphabeta scores more than py-mcts at equal wall-clock.",
-            "outcome": "YES" if wc["standings"]["cpp-alphabeta"]["w"] >
-                        wc["standings"]["py-mcts"]["w"] else "NO"})
-        markets.append({
-            "id": "wc-mcts-any", "event": "Wall-Clock Match",
-            "label": "py-mcts wins at least one Wall-Clock game",
-            "desc": "Can the knowledge pole steal a point when starved of nodes by the language tax?",
-            "outcome": "YES" if wc["standings"]["py-mcts"]["w"] >= 1 else "NO"})
-    if fn and wc:
-        cpp_fn = engine_score(fn["standings"], "cpp-alphabeta")
-        cpp_wc = engine_score(wc["standings"], "cpp-alphabeta")
-        markets.append({
-            "id": "language-tax", "event": "Language Tax",
-            "label": "The language tax is real: C++ dominates MORE under wall-clock",
-            "desc": "Resolves YES if cpp-alphabeta's score share is higher under wall-clock "
-                    "than under fixed nodes — i.e. Python loses Elo purely to speed.",
-            "outcome": "YES" if cpp_wc > cpp_fn else "NO"})
+    # The headline: language tax.
+    if fn and wc and len(fn["engines"]) == 2:
+        cpp = _by_lang(meta, fn["engines"], "C++")
+        py = _by_lang(meta, fn["engines"], "Python")
+        if cpp and py:
+            cf = engine_score(fn["standings"], cpp)
+            cw = engine_score(wc["standings"], cpp)
+            markets.append({
+                "id": "language-tax", "event": "Language Tax",
+                "label": f"The language tax is real: {cpp} pulls further ahead under wall-clock",
+                "desc": f"{cpp} and {py} run the SAME alpha-beta over the SAME eval. Resolves "
+                        f"YES if {cpp}'s score share is higher at equal time than at equal nodes "
+                        f"— i.e. {py} loses purely to speed.",
+                "outcome": "YES" if cw > cf else "NO"})
+
+    # Group-stage markets.
+    gs = events_by_id.get("group-stage")
+    if gs:
+        rank = sorted(gs["engines"], key=lambda n: gs["standings"][n]["pts"], reverse=True)
+        pya = "py-alphabeta" if "py-alphabeta" in gs["engines"] else None
+        pym = "py-mcts" if "py-mcts" in gs["engines"] else None
+        if pya and pym:
+            markets.append({
+                "id": "gs-py-duel", "event": "Group Stage",
+                "label": "py-alphabeta out-scores py-mcts in the Group Stage",
+                "desc": "Knowledge pole vs knowledge pole, same language — which paradigm "
+                        "banks more points across the round robin?",
+                "outcome": "YES" if gs["standings"][pya]["pts"] > gs["standings"][pym]["pts"] else "NO"})
+        if "random" in gs["engines"]:
+            markets.append({
+                "id": "gs-random-last", "event": "Group Stage",
+                "label": "random finishes bottom of the Group Stage",
+                "desc": "Does the protocol canary anchor the table, as an Elo anchor should?",
+                "outcome": "YES" if rank[-1] == "random" else "NO"})
     return markets
 
 
-def build_gates(events_by_id):
+def build_gates(events_by_id, meta):
     gates = [
         {"n": 1, "name": "perft", "status": "pass",
          "detail": "startpos/kiwipete/position3 exact to depth 5-6; ~82 Mnps."},
@@ -187,17 +209,19 @@ def build_gates(events_by_id):
          "detail": "cpp-alphabeta orch-vs-self delta <= 1 ms, stable."},
     ]
     fn, wc = events_by_id.get("fixed-node"), events_by_id.get("wall-clock")
-    if fn and wc:
-        cpp_fn = engine_score(fn["standings"], "cpp-alphabeta")
-        cpp_wc = engine_score(wc["standings"], "cpp-alphabeta")
-        nps_cpp = wc["stats"].get("cpp-alphabeta", {}).get("nps_mean") or 0
-        nps_py = wc["stats"].get("py-mcts", {}).get("nps_mean") or 1
+    if fn and wc and len(fn["engines"]) == 2:
+        cpp = _by_lang(meta, fn["engines"], "C++") or fn["engines"][0]
+        py = _by_lang(meta, fn["engines"], "Python") or fn["engines"][1]
+        cpp_fn = engine_score(fn["standings"], cpp)
+        cpp_wc = engine_score(wc["standings"], cpp)
+        nps_cpp = wc["stats"].get(cpp, {}).get("nps_mean") or 0
+        nps_py = wc["stats"].get(py, {}).get("nps_mean") or 1
         gates.append({
             "n": 5, "name": "language tax (miniature)",
-            "status": "pass" if cpp_wc >= cpp_fn else "measured",
-            "detail": f"cpp-alphabeta score share: {cpp_fn*100:.0f}% fixed-node -> "
-                      f"{cpp_wc*100:.0f}% wall-clock. Speed ratio {nps_cpp/nps_py:.1f}x "
-                      f"({nps_cpp:,} vs {nps_py:,} nps)."})
+            "status": "pass" if cpp_wc > cpp_fn else "measured",
+            "detail": f"{cpp} vs {py} (same algorithm): score share {cpp_fn*100:.0f}% "
+                      f"fixed-node -> {cpp_wc*100:.0f}% wall-clock. Speed ratio "
+                      f"{nps_cpp/nps_py:.1f}x ({nps_cpp:,} vs {nps_py:,} nps)."})
     else:
         gates.append({"n": 5, "name": "language tax (miniature)",
                       "status": "pending", "detail": "run both events to measure."})
@@ -226,8 +250,8 @@ def main():
         "generated": datetime.datetime.now().isoformat(timespec="seconds"),
         "engines": all_engines,
         "events": events,
-        "gates": build_gates(events_by_id),
-        "markets": build_markets(events_by_id),
+        "gates": build_gates(events_by_id, all_engines),
+        "markets": build_markets(events_by_id, all_engines),
     }
     os.makedirs(os.path.dirname(args.out), exist_ok=True)
     with open(args.out, "w") as f:

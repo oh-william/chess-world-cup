@@ -42,6 +42,8 @@ _lib.lc_make.argtypes = [ctypes.c_void_p, ctypes.c_uint16]
 _lib.lc_unmake.argtypes = [ctypes.c_void_p, ctypes.c_uint16]
 _lib.lc_eval.argtypes = [ctypes.c_void_p]
 _lib.lc_eval.restype = ctypes.c_int
+_lib.lc_piece_at.argtypes = [ctypes.c_void_p, ctypes.c_int]
+_lib.lc_piece_at.restype = ctypes.c_int
 _lib.lc_move_to_uci.argtypes = [ctypes.c_uint16, ctypes.c_char_p]
 _lib.lc_move_from_uci.argtypes = [ctypes.c_void_p, ctypes.c_char_p]
 _lib.lc_move_from_uci.restype = ctypes.c_uint16
@@ -93,6 +95,9 @@ class Board:
     def eval(self):
         return _lib.lc_eval(self._h)
 
+    def piece_at(self, sq):
+        return _lib.lc_piece_at(self._h, sq)
+
     def move_to_uci(self, move):
         buf = ctypes.create_string_buffer(6)
         _lib.lc_move_to_uci(move, buf)
@@ -100,3 +105,10 @@ class Board:
 
     def move_from_uci(self, uci):
         return _lib.lc_move_from_uci(self._h, uci.encode())
+
+
+# Packed-move decode helpers (see libchess/types.h).
+def move_from(m):  return m & 0x3F
+def move_to(m):    return (m >> 6) & 0x3F
+def move_flag(m):  return (m >> 14) & 0x3          # 0 normal 1 promo 2 ep 3 castle
+def move_promo(m): return ((m >> 12) & 0x3) + 1    # KNIGHT=1 .. QUEEN=4
