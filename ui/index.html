@@ -19,6 +19,7 @@
     <button data-tab="broadcast" class="active">📺 Broadcast</button>
     <button data-tab="live">🔴 Live</button>
     <button data-tab="standings">🏆 Standings</button>
+    <button data-tab="bracket">🏟️ Bracket</button>
     <button data-tab="gates">✅ Gates</button>
     <button data-tab="markets">📈 Markets</button>
   </nav>
@@ -100,6 +101,13 @@
   <!-- STANDINGS -->
   <section id="standings" class="tab">
     <div id="standings-content"></div>
+  </section>
+
+  <!-- BRACKET -->
+  <section id="bracket" class="tab">
+    <p class="section-intro">Single-elimination knockout, seeded from the group-stage
+    standings. Each tie is a mini-match; the winner advances.</p>
+    <div id="bracket-content" class="bracket"></div>
   </section>
 
   <!-- GATES -->

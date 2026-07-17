@@ -211,6 +211,51 @@ function renderStandings() {
   }
 }
 
+// ---------- bracket ----------
+function renderBracket() {
+  const root = document.getElementById("bracket-content");
+  root.innerHTML = "";
+  const br = DATA.bracket;
+  if (!br) { root.innerHTML = `<p class="section-intro">No knockout yet — run
+    <code>analysis/run_bracket.py</code> and rebuild the site data.</p>`; return; }
+
+  br.rounds.forEach(round => {
+    const col = el("div", "bracket-round");
+    col.appendChild(el("div", "round-name", round.name));
+    round.ties.forEach(tie => {
+      const card = el("div", "tie");
+      card.appendChild(tieSide(tie.a, tie.seedA, tie.scoreA, tie.winner === tie.a, tie.bye));
+      card.appendChild(tieSide(tie.b, tie.seedB, tie.scoreB, tie.winner === tie.b, tie.bye));
+      col.appendChild(card);
+    });
+    root.appendChild(col);
+  });
+
+  const champ = el("div", "bracket-round champion-col");
+  champ.appendChild(el("div", "round-name", "Champion"));
+  const c = engineOf(br.champion);
+  const trophy = el("div", "tie champion-card");
+  trophy.innerHTML = `<div class="trophy">🏆</div>
+    <div class="tie-side win"><span class="flag">${codeToFlag(c.country)}</span>
+      <span class="dot" style="background:${c.color}"></span>
+      <span class="nm">${br.champion}</span><span class="lang">${c.lang}</span></div>
+    <div class="champ-sub">${br.mode} ${br.budget} · best of ${br.games_per_tie}</div>`;
+  champ.appendChild(trophy);
+  root.appendChild(champ);
+}
+function tieSide(name, seed, score, isWin, bye) {
+  if (name === "BYE" || name == null)
+    return el("div", "tie-side bye", `<span class="nm">— bye —</span>`);
+  const e = engineOf(name);
+  const s = el("div", "tie-side" + (isWin ? " win" : ""));
+  s.innerHTML = `<span class="seed">${seed || ""}</span>
+    <span class="flag">${codeToFlag(e.country)}</span>
+    <span class="dot" style="background:${e.color}"></span>
+    <span class="nm">${name}</span><span class="lang">${e.lang}</span>
+    <span class="tie-score">${bye ? "" : (score != null ? score : "")}</span>`;
+  return s;
+}
+
 // ---------- gates ----------
 function renderGates() {
   const root = document.getElementById("gates-content");
@@ -455,6 +500,7 @@ async function boot() {
   };
   initBroadcast();
   renderStandings();
+  renderBracket();
   renderGates();
   loadMarket();
   renderMarkets();

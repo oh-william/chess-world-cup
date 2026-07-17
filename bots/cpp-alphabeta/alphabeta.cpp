@@ -61,15 +61,22 @@ int move_score(const Board& b, Move m) {
 }
 
 void order(const Board& b, MoveList& list, Move hint) {
-    // Selection sort by descending score; the hint (previous best) goes first.
-    for (int i = 0; i < list.count; ++i) {
-        int best = i;
-        int best_key = (list.moves[i] == hint) ? INF : move_score(b, list.moves[i]);
-        for (int j = i + 1; j < list.count; ++j) {
-            int key = (list.moves[j] == hint) ? INF : move_score(b, list.moves[j]);
-            if (key > best_key) { best_key = key; best = j; }
+    // Score each move once, then insertion-sort by descending key (the hint, i.e.
+    // the previous best, goes first). Computing move_score once per move — not
+    // once per comparison — keeps the eval/piece lookups off the hot inner loop.
+    int keys[256];
+    for (int i = 0; i < list.count; ++i)
+        keys[i] = (list.moves[i] == hint) ? INF : move_score(b, list.moves[i]);
+    for (int i = 1; i < list.count; ++i) {
+        Move m = list.moves[i];
+        int k = keys[i], j = i - 1;
+        while (j >= 0 && keys[j] < k) {
+            list.moves[j + 1] = list.moves[j];
+            keys[j + 1] = keys[j];
+            --j;
         }
-        std::swap(list.moves[i], list.moves[best]);
+        list.moves[j + 1] = m;
+        keys[j + 1] = k;
     }
 }
 

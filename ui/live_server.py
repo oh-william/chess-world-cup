@@ -26,12 +26,14 @@ ENGINES = {
     "cpp-alphabeta": [os.path.join(ROOT, "build", "cpp-alphabeta")],
     "random":        [os.path.join(ROOT, "build", "random")],
     "cpp-greedy":    [os.path.join(ROOT, "build", "cpp-greedy")],
+    "rs-alphabeta":  [os.path.join(ROOT, "bots", "rs-alphabeta", "target", "release", "rs-alphabeta")],
     "py-mcts":       [os.path.join(ROOT, "bots", "py-mcts", "py-mcts")],
     "py-alphabeta":  [os.path.join(ROOT, "bots", "py-alphabeta", "py-alphabeta")],
     "py-greedy":     [os.path.join(ROOT, "bots", "py-greedy", "py-greedy")],
 }
 ENGINE_META = {
     "cpp-alphabeta": {"lang": "C++", "country": "DE", "color": "#e63946"},
+    "rs-alphabeta":  {"lang": "Rust", "country": "SE", "color": "#dea584"},
     "py-mcts":       {"lang": "Python", "country": "BR", "color": "#2a9d8f"},
     "py-alphabeta":  {"lang": "Python", "country": "BR", "color": "#f4a261"},
     "cpp-greedy":    {"lang": "C++", "country": "DE", "color": "#e76f51"},

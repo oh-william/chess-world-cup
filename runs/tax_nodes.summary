@@ -2,30 +2,30 @@ mode: nodes   budget: 20000   games: 20
 engine1: cpp-alphabeta [lang=C++ family=alphabeta country=DE]
 engine2: py-alphabeta [lang=Python family=alpha-beta country=BR]
 
-game   0  cpp-alphabeta(W) vs py-alphabeta(B)  1/2-1/2   177 plies (repetition)
-game   1  py-alphabeta(W) vs cpp-alphabeta(B)  1/2-1/2   47 plies (repetition)
+game   0  cpp-alphabeta(W) vs py-alphabeta(B)  1/2-1/2   54 plies (repetition)
+game   1  py-alphabeta(W) vs cpp-alphabeta(B)  1/2-1/2   54 plies (repetition)
 game   2  cpp-alphabeta(W) vs py-alphabeta(B)  1/2-1/2   35 plies (repetition)
 game   3  py-alphabeta(W) vs cpp-alphabeta(B)  1/2-1/2   35 plies (repetition)
-game   4  cpp-alphabeta(W) vs py-alphabeta(B)  1/2-1/2   98 plies (repetition)
-game   5  py-alphabeta(W) vs cpp-alphabeta(B)  0-1       88 plies (checkmate)
-game   6  cpp-alphabeta(W) vs py-alphabeta(B)  1/2-1/2   106 plies (repetition)
-game   7  py-alphabeta(W) vs cpp-alphabeta(B)  1/2-1/2   122 plies (repetition)
-game   8  cpp-alphabeta(W) vs py-alphabeta(B)  1/2-1/2   72 plies (repetition)
+game   4  cpp-alphabeta(W) vs py-alphabeta(B)  1/2-1/2   104 plies (repetition)
+game   5  py-alphabeta(W) vs cpp-alphabeta(B)  1/2-1/2   104 plies (repetition)
+game   6  cpp-alphabeta(W) vs py-alphabeta(B)  1-0       71 plies (checkmate)
+game   7  py-alphabeta(W) vs cpp-alphabeta(B)  1-0       71 plies (checkmate)
+game   8  cpp-alphabeta(W) vs py-alphabeta(B)  1/2-1/2   130 plies (repetition)
 game   9  py-alphabeta(W) vs cpp-alphabeta(B)  1/2-1/2   130 plies (repetition)
 game  10  cpp-alphabeta(W) vs py-alphabeta(B)  0-1       64 plies (checkmate)
-game  11  py-alphabeta(W) vs cpp-alphabeta(B)  1/2-1/2   49 plies (repetition)
-game  12  cpp-alphabeta(W) vs py-alphabeta(B)  1/2-1/2   125 plies (repetition)
-game  13  py-alphabeta(W) vs cpp-alphabeta(B)  1/2-1/2   82 plies (repetition)
+game  11  py-alphabeta(W) vs cpp-alphabeta(B)  1/2-1/2   67 plies (repetition)
+game  12  cpp-alphabeta(W) vs py-alphabeta(B)  1/2-1/2   83 plies (repetition)
+game  13  py-alphabeta(W) vs cpp-alphabeta(B)  1/2-1/2   83 plies (repetition)
 game  14  cpp-alphabeta(W) vs py-alphabeta(B)  1/2-1/2   100 plies (repetition)
-game  15  py-alphabeta(W) vs cpp-alphabeta(B)  1/2-1/2   62 plies (repetition)
-game  16  cpp-alphabeta(W) vs py-alphabeta(B)  1-0       93 plies (checkmate)
-game  17  py-alphabeta(W) vs cpp-alphabeta(B)  1/2-1/2   86 plies (repetition)
-game  18  cpp-alphabeta(W) vs py-alphabeta(B)  1/2-1/2   107 plies (repetition)
-game  19  py-alphabeta(W) vs cpp-alphabeta(B)  0-1       70 plies (checkmate)
+game  15  py-alphabeta(W) vs cpp-alphabeta(B)  1/2-1/2   100 plies (repetition)
+game  16  cpp-alphabeta(W) vs py-alphabeta(B)  1/2-1/2   118 plies (repetition)
+game  17  py-alphabeta(W) vs cpp-alphabeta(B)  1/2-1/2   72 plies (repetition)
+game  18  cpp-alphabeta(W) vs py-alphabeta(B)  1/2-1/2   78 plies (repetition)
+game  19  py-alphabeta(W) vs cpp-alphabeta(B)  1/2-1/2   112 plies (repetition)
 
 ==== summary ====
 games completed : 20 / 20
-cpp-alphabeta wins: 3   py-alphabeta wins: 1   draws: 16
+cpp-alphabeta wins: 1   py-alphabeta wins: 2   draws: 17
 protocol errors : 0
 timeouts        : 0
 illegal moves   : 0

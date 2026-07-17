@@ -115,6 +115,26 @@ tr:last-child td { border-bottom: none; }
 .barcell .fill { position: absolute; left: 0; top: 0; bottom: 0; background: rgba(96,165,250,.18); }
 .barcell span { position: relative; }
 
+/* Bracket */
+.bracket { display: flex; gap: 20px; overflow-x: auto; padding-bottom: 10px; align-items: stretch; }
+.bracket-round { display: flex; flex-direction: column; justify-content: space-around; gap: 14px; min-width: 210px; }
+.round-name { font-size: 11px; text-transform: uppercase; letter-spacing: .5px; color: var(--dim); text-align: center; margin-bottom: 4px; }
+.tie { background: var(--panel); border: 1px solid var(--line); border-radius: 9px; overflow: hidden; }
+.tie-side { display: flex; align-items: center; gap: 7px; padding: 8px 10px; font-size: 13px; }
+.tie-side + .tie-side { border-top: 1px solid var(--line); }
+.tie-side.win { background: rgba(52,211,153,.10); }
+.tie-side.win .nm { font-weight: 700; }
+.tie-side.bye { color: var(--dim); font-style: italic; }
+.tie-side .seed { width: 18px; color: var(--dim); font-size: 11px; text-align: center; }
+.tie-side .flag { font-size: 16px; }
+.tie-side .nm { flex: 1; }
+.tie-side .lang { font-size: 10px; color: var(--dim); border: 1px solid var(--line); padding: 0 5px; border-radius: 20px; }
+.tie-side .tie-score { font-weight: 700; font-variant-numeric: tabular-nums; }
+.champion-col { justify-content: center; }
+.champion-card { border-color: var(--accent); text-align: center; padding: 6px; }
+.champion-card .trophy { font-size: 34px; }
+.champ-sub { color: var(--dim); font-size: 11px; padding: 6px; }
+
 /* Gates */
 .gate-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
 .gate { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px; }

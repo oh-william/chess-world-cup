@@ -19,6 +19,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ENGINES = {
     "cpp-alphabeta": [os.path.join(ROOT, "build", "cpp-alphabeta")],
     "cpp-greedy":    [os.path.join(ROOT, "build", "cpp-greedy")],
+    "rs-alphabeta":  [os.path.join(ROOT, "bots", "rs-alphabeta", "target", "release", "rs-alphabeta")],
     "random":        [os.path.join(ROOT, "build", "random")],
     "py-alphabeta":  [os.path.join(ROOT, "bots", "py-alphabeta", "py-alphabeta")],
     "py-mcts":       [os.path.join(ROOT, "bots", "py-mcts", "py-mcts")],

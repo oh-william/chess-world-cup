@@ -1,0 +1,123 @@
+{
+ "seeds": [
+  {
+   "seed": 1,
+   "engine": "rs-alphabeta"
+  },
+  {
+   "seed": 2,
+   "engine": "py-alphabeta"
+  },
+  {
+   "seed": 3,
+   "engine": "cpp-alphabeta"
+  },
+  {
+   "seed": 4,
+   "engine": "py-mcts"
+  },
+  {
+   "seed": 5,
+   "engine": "random"
+  },
+  {
+   "seed": 6,
+   "engine": "py-greedy"
+  },
+  {
+   "seed": 7,
+   "engine": "cpp-greedy"
+  }
+ ],
+ "rounds": [
+  {
+   "name": "Quarterfinals",
+   "ties": [
+    {
+     "a": "rs-alphabeta",
+     "b": "BYE",
+     "seedA": 1,
+     "seedB": 8,
+     "scoreA": null,
+     "scoreB": null,
+     "winner": "rs-alphabeta",
+     "bye": true
+    },
+    {
+     "a": "py-mcts",
+     "b": "random",
+     "seedA": 4,
+     "seedB": 5,
+     "scoreA": 3.5,
+     "scoreB": 0.5,
+     "winner": "py-mcts",
+     "bye": false
+    },
+    {
+     "a": "py-alphabeta",
+     "b": "cpp-greedy",
+     "seedA": 2,
+     "seedB": 7,
+     "scoreA": 4.0,
+     "scoreB": 0.0,
+     "winner": "py-alphabeta",
+     "bye": false
+    },
+    {
+     "a": "cpp-alphabeta",
+     "b": "py-greedy",
+     "seedA": 3,
+     "seedB": 6,
+     "scoreA": 4.0,
+     "scoreB": 0.0,
+     "winner": "cpp-alphabeta",
+     "bye": false
+    }
+   ]
+  },
+  {
+   "name": "Semifinals",
+   "ties": [
+    {
+     "a": "rs-alphabeta",
+     "b": "py-mcts",
+     "seedA": 1,
+     "seedB": 4,
+     "scoreA": 4.0,
+     "scoreB": 0.0,
+     "winner": "rs-alphabeta",
+     "bye": false
+    },
+    {
+     "a": "py-alphabeta",
+     "b": "cpp-alphabeta",
+     "seedA": 2,
+     "seedB": 3,
+     "scoreA": 2.0,
+     "scoreB": 2.0,
+     "winner": "py-alphabeta",
+     "bye": false
+    }
+   ]
+  },
+  {
+   "name": "Final",
+   "ties": [
+    {
+     "a": "rs-alphabeta",
+     "b": "py-alphabeta",
+     "seedA": 1,
+     "seedB": 2,
+     "scoreA": 2.0,
+     "scoreB": 2.0,
+     "winner": "rs-alphabeta",
+     "bye": false
+    }
+   ]
+  }
+ ],
+ "champion": "rs-alphabeta",
+ "mode": "nodes",
+ "budget": 12000,
+ "games_per_tie": 4
+}

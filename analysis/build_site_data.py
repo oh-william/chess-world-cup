@@ -37,6 +37,7 @@ def positions_for(mv):
 # Presentation metadata for the engines we ship (World-Cup flavour).
 ENGINE_META = {
     "cpp-alphabeta": {"lang": "C++", "family": "alpha-beta", "color": "#e63946"},
+    "rs-alphabeta":  {"lang": "Rust", "family": "alpha-beta", "color": "#dea584"},
     "py-alphabeta":  {"lang": "Python", "family": "alpha-beta", "color": "#f4a261"},
     "py-mcts":       {"lang": "Python", "family": "MCTS", "color": "#2a9d8f"},
     "cpp-greedy":    {"lang": "C++", "family": "greedy", "color": "#e76f51"},
@@ -232,6 +233,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--event", nargs=3, action="append", metavar=("ID", "LABEL", "PATH"),
                     default=[])
+    ap.add_argument("--bracket", help="bracket.json from run_bracket.py to embed")
     ap.add_argument("--out", default="ui/data/tournament.json")
     args = ap.parse_args()
 
@@ -253,6 +255,27 @@ def main():
         "gates": build_gates(events_by_id, all_engines),
         "markets": build_markets(events_by_id, all_engines),
     }
+    if args.bracket and os.path.exists(args.bracket):
+        with open(args.bracket) as f:
+            br = json.load(f)
+        out["bracket"] = br
+        # Knockout markets with real outcomes.
+        top_seed = next((s["engine"] for s in br["seeds"] if s["seed"] == 1), None)
+        if top_seed:
+            out["markets"].append({
+                "id": "ko-topseed", "event": "Knockout",
+                "label": f"top seed {top_seed} lifts the trophy",
+                "desc": "Does the group-stage winner convert its seeding into the title?",
+                "outcome": "YES" if br["champion"] == top_seed else "NO"})
+        final = br["rounds"][-1]["ties"][0] if br["rounds"] else None
+        if final:
+            finalists = [final["a"], final["b"]]
+            py_final = any(all_engines.get(n, {}).get("lang") == "Python" for n in finalists)
+            out["markets"].append({
+                "id": "ko-py-final", "event": "Knockout",
+                "label": "a Python engine reaches the Final",
+                "desc": "Can an interpreted engine survive the knockout to the last match?",
+                "outcome": "YES" if py_final else "NO"})
     os.makedirs(os.path.dirname(args.out), exist_ok=True)
     with open(args.out, "w") as f:
         json.dump(out, f)

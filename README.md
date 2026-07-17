@@ -180,44 +180,55 @@ python3 analysis/report.py match.jsonl
 ### Gate 5 results — the language tax, cleanly isolated
 
 The purest way to measure a *language* tax is to hold the algorithm fixed. `py-alphabeta`
-runs the **same** iterative-deepening alpha-beta + quiescence over the **same** handcrafted
-eval as `cpp-alphabeta` — line for line the same search, reusing the perft-clean core over a
-**C ABI** (`ctypes`). The only difference is the language. So `cpp-alphabeta` vs
-`py-alphabeta`, 20 games at fixed nodes then 20 at fixed wall-clock (100 ms):
+and `rs-alphabeta` run the **same** iterative-deepening alpha-beta + quiescence over the
+**same** handcrafted eval as `cpp-alphabeta` — line for line the same search, reusing the
+perft-clean core over a **C ABI** (Python via `ctypes`, Rust via native FFI). Only the
+language differs. So `cpp-alphabeta` vs `py-alphabeta`, 20 games at fixed nodes then 20 at
+fixed wall-clock (100 ms):
 
 | | Fixed-Node (equal nodes) | Wall-Clock (equal time) |
 |---|---|---|
-| cpp-alphabeta score share | **55 %** (3–1–16) | **72 %** (9–0–11) |
-| py-alphabeta score share | 45 % | 28 % |
-| cpp-alphabeta NPS | — | **1.68 M** |
-| py-alphabeta NPS | — | **0.15 M** |
+| cpp-alphabeta score share | **48 %** (1–2–17) | **72 %** (9–0–11) |
+| py-alphabeta score share | 52 % | 28 % |
 
 **The measurement:** at equal *nodes* the two are a coin-flip (identical algorithm) — Python
-holds its own. Switch to equal *time* and C++ jumps to a **72 % score share**, because
-`py-alphabeta` runs at **11.4× fewer nodes/sec** and simply searches shallower in the same
-100 ms. That **17-point swing, from an 11.4× throughput penalty, is the language tax** — Elo
-lost purely to implementation, with algorithm and knowledge held constant. Every run: **0
-protocol errors / timeouts / illegal moves**; fixed-node mode is bit-reproducible.
+is, if anything, fractionally ahead. Switch to equal *time* and C++ jumps to a **72 % score
+share**, because `py-alphabeta` runs at **~31× fewer nodes/sec** and simply searches shallower
+in the same 100 ms. That **~24-point swing, from a 30.7× throughput penalty, is the language
+tax** — Elo lost purely to implementation, with algorithm and knowledge held constant.
 
-*(The earlier `cpp-alphabeta` vs `py-mcts` run — knowledge pole vs speed pole — is preserved
-in git history; it conflated algorithm and language, which is exactly why this same-algorithm
-pair is the cleaner experiment.)*
+The three same-algorithm engines give a **language-tax spectrum** (search nodes/sec):
 
-### Group Stage — a round-robin field
+| engine | language | NPS | tax vs C++ |
+|---|---|---|---|
+| cpp-alphabeta | C++ | ~4.0 M | 1.0× (baseline) |
+| rs-alphabeta | Rust (FFI) | ~3.2 M | ~1.3× |
+| py-alphabeta | Python (FFI) | ~0.13 M | **~31×** |
 
-Six engines across two languages and four paradigms play a round robin (`nodes 8000`):
+Compiled languages cluster near the baseline; the interpreter pays the whole tax. Every run:
+**0 protocol errors / timeouts / illegal moves**; fixed-node mode is bit-reproducible.
+
+### Group Stage → Knockout — the World Cup
+
+Seven engines across three languages and four paradigms play a round robin (`nodes 8000`):
 
 | # | Team | Lang | Score % | note |
 |---|---|---|---|---|
-| 1 | cpp-alphabeta | C++ | 90 % | the two alpha-betas tie at the top… |
-| 2 | py-alphabeta | Python | 90 % | …because at *equal nodes* language doesn't matter |
-| 3 | py-mcts | Python | 55 % | the knowledge pole, mid-table |
-| 4 | random | C++ | 25 % | the anchor — and it beats *both* greedy bots |
-| 5 | cpp-greedy | C++ | 20 % | depth-1 greedy oscillates into draws & gets punished |
-| 6 | py-greedy | Python | 20 % | same fate, other language |
+| 1–3 | cpp / rs / py-alphabeta | C++ / Rust / Python | **83 %** (tie) | same algorithm ⇒ at *equal nodes* language doesn't matter |
+| 4 | py-mcts | Python | 46 % | the knowledge pole, mid-table |
+| 5 | random | C++ | 21 % | the anchor — still beats *both* greedy bots |
+| 6–7 | cpp / py-greedy | C++ / Python | 17 % | depth-1 greedy shuffles into draws & gets punished |
 
-The surprise — greedy finishing *below* random — is real: a deterministic depth-1 grabber
-shuffles into repetitions and hangs pieces to the searchers, while random at least varies.
+The three alpha-betas finishing **dead level** is the headline: strip away the clock and
+C++, Rust and Python are indistinguishable. The top seeds then enter a single-elimination
+**knockout** (`analysis/run_bracket.py`); with the finalists so evenly matched, the
+Semifinal and Final went to all-draw tie-breaks and **`rs-alphabeta`** lifted the trophy —
+`py-alphabeta` (Python) reaching the Final. The bracket and every knockout game are viewable
+in the UI's 🏟️ Bracket and 📺 Broadcast tabs.
+
+*(The earlier `cpp-alphabeta` vs `py-mcts` run — knowledge pole vs speed pole — is preserved
+in git history; it conflated algorithm and language, which is why the same-algorithm pairs
+above are the cleaner experiment.)*
 
 ---
 
@@ -236,6 +247,8 @@ event contracts** derived from the results.
   the two engines / mode / budget and hit *Start* to launch a fresh match from the browser.
 - **🏆 Standings** — engine "teams" with flag, language badge, W-D-L, points, score %, NPS,
   latency and tax percentiles, per event (including the round-robin group stage).
+- **🏟️ Bracket** — the single-elimination knockout: seeds, per-tie scores, winners advancing,
+  and the champion.
 - **✅ Gates** — the five verification gates with pass/fail and key numbers.
 - **📈 Markets** — an automated market maker (LMSR) over contracts like *"cpp-alphabeta wins
   the Wall-Clock Duel"* and *"the language tax is real"*. Play money, price history, then
@@ -246,15 +259,22 @@ event contracts** derived from the results.
 python3 ui/live_server.py      # -> http://localhost:8000, use the 🔴 Live tab
 
 # --- REPLAY: compile finished matches into the static site ---
-# 1. run matches (writes runs/*.jsonl) — or a whole round robin:
+# 0. the Rust engine builds separately (links the C ABI dylib in build/):
+(cd bots/rs-alphabeta && cargo build --release)
+# 1. round-robin group stage, then a knockout seeded from it:
 python3 analysis/run_tournament.py \
-    --engines cpp-alphabeta,py-alphabeta,py-mcts,cpp-greedy,py-greedy,random \
+    --engines cpp-alphabeta,rs-alphabeta,py-alphabeta,py-mcts,cpp-greedy,py-greedy,random \
     --mode nodes --budget 8000 --games 2 --out runs/group.jsonl
+python3 analysis/run_bracket.py --from-group runs/group.jsonl \
+    --mode nodes --budget 12000 --games 4 \
+    --out-jsonl runs/knockout.jsonl --out-bracket runs/bracket.json
 # 2. compile logs into the site payload
 python3 analysis/build_site_data.py \
     --event fixed-node "Fixed-Node Duel" runs/tax_nodes.jsonl \
     --event wall-clock "Wall-Clock Duel" runs/tax_time.jsonl \
     --event group-stage "Group Stage"   runs/group.jsonl \
+    --event knockout    "Knockout"      runs/knockout.jsonl \
+    --bracket runs/bracket.json \
     --out ui/data/tournament.json
 # 3. serve it
 python3 ui/serve.py            # -> http://localhost:8000
@@ -285,6 +305,7 @@ Requires a C++20 compiler and CMake ≥ 3.16.
 /shim/cpp          UCI shim, C++                           (built ✅)
 /shim/py           UCI shim, Python (ctypes + FFI board)   (built ✅)
 /bots/cpp-alphabeta  classical alpha-beta — the speed pole (built ✅)
+/bots/rs-alphabeta   same alpha-beta in Rust (C-ABI FFI)   (built ✅)
 /bots/py-alphabeta   same alpha-beta in Python — tax probe (built ✅)
 /bots/py-mcts        Python MCTS — the knowledge pole      (built ✅)
 /bots/cpp-greedy     depth-1 greedy (C++)                  (built ✅)
