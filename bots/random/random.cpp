@@ -35,7 +35,7 @@ uint64_t next_rand() {
 namespace shim {
 
 Meta meta() {
-    return Meta{"random", "C++", "random", "XX"};
+    return Meta{"random", "C++", "random", "AQ"};
 }
 
 Move search(Board& board, const Limits&, uint64_t& out_nodes) {

@@ -249,21 +249,24 @@ int main(int argc, char** argv) {
         }
 
         Result res = Result::DRAW;
+        std::string reason = "adjudicated";
         for (int ply = 0; ; ++ply) {
             // Terminal checks (referee side).
             MoveList legal; board.legal_moves(legal);
             if (legal.count == 0) {
-                res = board.in_check()
-                          ? (board.side_to_move() == WHITE ? Result::BLACK_WINS
-                                                           : Result::WHITE_WINS)
-                          : Result::DRAW;
+                if (board.in_check()) {
+                    res = board.side_to_move() == WHITE ? Result::BLACK_WINS
+                                                        : Result::WHITE_WINS;
+                    reason = "checkmate";
+                } else { res = Result::DRAW; reason = "stalemate"; }
                 break;
             }
-            if (halfmove >= 100 || board.insufficient_material() ||
-                rep[board.fen()] >= 3 || ply >= MAX_PLIES) {
-                res = Result::DRAW;
-                break;
+            if (halfmove >= 100) { res = Result::DRAW; reason = "fifty-move"; break; }
+            if (board.insufficient_material()) {
+                res = Result::DRAW; reason = "insufficient-material"; break;
             }
+            if (rep[board.fen()] >= 3) { res = Result::DRAW; reason = "repetition"; break; }
+            if (ply >= MAX_PLIES) { res = Result::DRAW; reason = "max-plies"; break; }
 
             Color stm = board.side_to_move();
             Engine& mover = (stm == WHITE) ? white : black;
@@ -301,7 +304,7 @@ int main(int argc, char** argv) {
             halfmove = (capture || pawn) ? 0 : halfmove + 1;
 
             long long delta = mr.orch_ms - mr.self_ms;
-            log << "{\"game\":" << g << ",\"ply\":" << ply
+            log << "{\"type\":\"move\",\"game\":" << g << ",\"ply\":" << ply
                 << ",\"color\":\"" << (stm == WHITE ? "w" : "b") << "\""
                 << ",\"engine\":\"" << mover.name << "\""
                 << ",\"mode\":\"" << (o.nodes_mode ? "nodes" : "movetime") << "\""
@@ -326,9 +329,20 @@ int main(int argc, char** argv) {
         else if (res == Result::BLACK_WINS) (white_is_e1 ? w2 : w1)++;
         else draws++;
 
-        std::printf("game %3d  %-8s(W) vs %-8s(B)  %-8s  %zu plies\n",
+        // Authoritative per-game result record (the UI/analysis read this).
+        log << "{\"type\":\"result\",\"game\":" << g
+            << ",\"mode\":\"" << (o.nodes_mode ? "nodes" : "movetime") << "\""
+            << ",\"budget\":" << (o.nodes_mode ? o.nodes : o.movetime)
+            << ",\"white\":\"" << white.name << "\",\"black\":\"" << black.name << "\""
+            << ",\"white_country\":\"" << white.country << "\""
+            << ",\"black_country\":\"" << black.country << "\""
+            << ",\"result\":\"" << result_str(res) << "\""
+            << ",\"reason\":\"" << reason << "\""
+            << ",\"plies\":" << moves.size() << "}\n";
+
+        std::printf("game %3d  %-8s(W) vs %-8s(B)  %-8s  %zu plies (%s)\n",
                     g, white.name.c_str(), black.name.c_str(),
-                    result_str(res), moves.size());
+                    result_str(res), moves.size(), reason.c_str());
     }
 
     e1.proc.stop();

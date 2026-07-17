@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chess World Cup — Broadcast</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <div class="brand">
+    <span class="logo">♞</span>
+    <div>
+      <h1>Chess World Cup</h1>
+      <div class="tagline">measuring the <em>language tax</em> — Elo lost purely to implementation</div>
+    </div>
+  </div>
+  <nav id="tabs">
+    <button data-tab="broadcast" class="active">📺 Broadcast</button>
+    <button data-tab="standings">🏆 Standings</button>
+    <button data-tab="gates">✅ Gates</button>
+    <button data-tab="markets">📈 Markets</button>
+  </nav>
+  <div class="meta" id="generated"></div>
+</header>
+
+<main>
+  <!-- BROADCAST -->
+  <section id="broadcast" class="tab active">
+    <div class="broadcast-grid">
+      <div class="board-col">
+        <div class="plate" id="plate-top"></div>
+        <div id="board" class="board"></div>
+        <div class="plate" id="plate-bottom"></div>
+        <div class="controls">
+          <button id="btn-start">⏮</button>
+          <button id="btn-prev">◀</button>
+          <button id="btn-play">▶ Play</button>
+          <button id="btn-next">▶▶</button>
+          <button id="btn-end">⏭</button>
+          <input type="range" id="scrub" min="0" value="0" step="1">
+          <span id="ply-label" class="ply-label">0 / 0</span>
+        </div>
+      </div>
+      <div class="side-col">
+        <div class="selectors">
+          <label>Event <select id="sel-event"></select></label>
+          <label>Game <select id="sel-game"></select></label>
+        </div>
+        <div id="game-result" class="game-result"></div>
+        <div class="tax-meter">
+          <div class="tax-label">cumulative implementation tax (orch − self)</div>
+          <div class="tax-bar"><div id="tax-fill"></div></div>
+          <div id="tax-value" class="tax-value"></div>
+        </div>
+        <div class="telemetry" id="telemetry"></div>
+        <div class="movelist" id="movelist"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- STANDINGS -->
+  <section id="standings" class="tab">
+    <div id="standings-content"></div>
+  </section>
+
+  <!-- GATES -->
+  <section id="gates" class="tab">
+    <p class="section-intro">Phase-0 verification gates. Each is a hard pass/fail; nothing
+    downstream is trusted until the gate is green.</p>
+    <div id="gates-content" class="gate-grid"></div>
+  </section>
+
+  <!-- MARKETS -->
+  <section id="markets" class="tab">
+    <div class="markets-head">
+      <p class="section-intro">Kalshi-style <strong>event contracts</strong> derived from the
+      tournament. Play money via an automated market maker (LMSR). Trade, watch the price move,
+      then <strong>resolve</strong> against the real outcome.</p>
+      <div class="wallet">💰 Balance: <span id="balance">—</span> · P/L: <span id="pnl">—</span>
+        <button id="reset-wallet" class="mini">reset</button></div>
+    </div>
+    <div id="markets-content" class="market-grid"></div>
+  </section>
+</main>
+
+<footer>
+  <span>libchess · UCI over stdin/stdout · one game at a time · warm-up before the clock</span>
+</footer>
+
+<script src="app.js"></script>
+</body>
+</html>

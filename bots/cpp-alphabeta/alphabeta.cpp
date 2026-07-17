@@ -126,7 +126,7 @@ int negamax(Board& b, int depth, int ply, int alpha, int beta, Search& ss) {
 namespace shim {
 
 Meta meta() {
-    return Meta{"cpp-alphabeta", "C++", "alphabeta", "XX"};
+    return Meta{"cpp-alphabeta", "C++", "alphabeta", "DE"};
 }
 
 Move search(Board& board, const Limits& limits, uint64_t& out_nodes) {

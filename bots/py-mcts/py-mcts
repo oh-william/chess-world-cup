@@ -1,0 +1,137 @@
+#!/usr/bin/env python3
+"""py-mcts — Monte Carlo Tree Search (UCT) with eval-guided leaf values. The
+knowledge pole: it cannot win on nodes/sec (Python + FFI per node), so it must
+win on Elo-per-node. Reuses the perft-clean libchess core over the C ABI.
+
+A "node" is one position visited (one make()), matching cpp-alphabeta's counting,
+so `go nodes N` means the same thinking budget for both engines. Fixed-node mode
+never reads the clock -> bit-reproducible for a given (position, budget, seed).
+"""
+import math
+import os
+import random
+import sys
+import time
+
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+    "shim", "py"))
+
+import shim  # noqa: E402
+
+UCT_C = 1.4
+DEFAULT_NODES = 10000
+
+_seed = int(os.environ.get("ENGINE_SEED", "1") or "1")
+RNG = random.Random(_seed)
+
+
+class Node:
+    __slots__ = ("move", "parent", "children", "untried", "stm", "N", "W", "terminal")
+
+    def __init__(self, move, parent, board):
+        self.move = move
+        self.parent = parent
+        self.children = []
+        moves = board.legal_moves()
+        self.untried = list(moves)
+        self.stm = board.side_to_move()
+        self.N = 0
+        self.W = 0.0
+        self.terminal = (len(moves) == 0)
+
+
+def _uct_select(node):
+    log_n = math.log(node.N + 1)
+    best, best_v = None, -1.0
+    for c in node.children:
+        exploit = 1.0 - (c.W / c.N)           # child value from parent's view
+        explore = UCT_C * math.sqrt(log_n / c.N)
+        v = exploit + explore
+        if v > best_v:
+            best_v, best = v, c
+    return best
+
+
+def _leaf_value(board, r_side):
+    """Value in {0..1} from r_side's perspective for the leaf position. Uses the
+    shared handcrafted eval mapped through a logistic (win-probability) curve —
+    this is what makes py-mcts *knowledge-dense per node* instead of a random
+    playout. Terminal positions score exactly."""
+    moves = board.legal_moves()
+    if len(moves) == 0:
+        if board.in_check():
+            loser = board.side_to_move()
+            return 0.0 if loser == r_side else 1.0
+        return 0.5
+    if board.insufficient():
+        return 0.5
+    e = board.eval()                    # side-to-move relative, centipawns
+    cur = board.side_to_move()
+    p_cur = 1.0 / (1.0 + 10.0 ** (-e / 400.0))  # logistic, 400-cp scale
+    return p_cur if cur == r_side else 1.0 - p_cur
+
+
+def search(board, limits):
+    node_budget = limits.nodes_left if limits.nodes_left >= 0 else -1
+    time_budget = limits.ms_left if limits.ms_left >= 0 else -1
+    if node_budget < 0 and time_budget < 0:
+        node_budget = DEFAULT_NODES
+
+    root_moves = board.legal_moves()
+    if len(root_moves) == 0:
+        return 0, 0
+    if len(root_moves) == 1:
+        return root_moves[0], 0
+
+    root = Node(0, None, board)
+    nodes = 0
+    start = time.monotonic()
+
+    while True:
+        if node_budget >= 0 and nodes >= node_budget:
+            break
+        if time_budget >= 0 and (time.monotonic() - start) * 1000.0 >= time_budget - 2:
+            break
+
+        node = root
+        path = []
+        # Selection: descend fully-expanded nodes.
+        while not node.untried and node.children and not node.terminal:
+            node = _uct_select(node)
+            board.make(node.move)
+            path.append(node.move)
+            nodes += 1
+        # Expansion.
+        if node.untried and not node.terminal:
+            mv = node.untried.pop(RNG.randrange(len(node.untried)))
+            board.make(mv)
+            path.append(mv)
+            nodes += 1
+            child = Node(mv, node, board)
+            node.children.append(child)
+            node = child
+        # Simulation: evaluate the leaf (no random playout).
+        r_side = board.side_to_move()
+        result = _leaf_value(board, r_side)
+        # Backprop (negamax perspective) + unwind board to root.
+        n = node
+        while n is not None:
+            n.N += 1
+            n.W += result if n.stm == r_side else (1.0 - result)
+            n = n.parent
+        for mv in reversed(path):
+            board.unmake(mv)
+
+    if not root.children:
+        return root_moves[0], nodes
+    best = max(root.children, key=lambda c: c.N)
+    return best.move, nodes
+
+
+def meta():
+    return {"name": "py-mcts", "lang": "Python", "family": "mcts", "country": "BR"}
+
+
+if __name__ == "__main__":
+    sys.exit(shim.run(meta, search))

@@ -16,6 +16,11 @@ add_library(libchess STATIC
 )
 target_include_directories(libchess PUBLIC libchess/include)
 
+# Shared C ABI for FFI bots (Python/etc. load this via their runtime's FFI).
+add_library(libchess_c SHARED libchess/src/c_api.cpp)
+target_link_libraries(libchess_c PRIVATE libchess)
+target_include_directories(libchess_c PUBLIC libchess/include)
+
 # C++ UCI shim — bots link this and implement meta()/search().
 add_library(shim_cpp STATIC shim/cpp/shim.cpp)
 target_include_directories(shim_cpp PUBLIC shim/cpp)

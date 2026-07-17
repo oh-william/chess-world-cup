@@ -1,0 +1,54 @@
+mode: nodes   budget: 20000   games: 40
+engine1: cpp-alphabeta [lang=C++ family=alphabeta country=DE]
+engine2: py-mcts [lang=Python family=mcts country=BR]
+
+game   0  cpp-alphabeta(W) vs py-mcts (B)  1-0       47 plies (checkmate)
+game   1  py-mcts (W) vs cpp-alphabeta(B)  1/2-1/2   92 plies (repetition)
+game   2  cpp-alphabeta(W) vs py-mcts (B)  1-0       25 plies (checkmate)
+game   3  py-mcts (W) vs cpp-alphabeta(B)  0-1       26 plies (checkmate)
+game   4  cpp-alphabeta(W) vs py-mcts (B)  1-0       41 plies (checkmate)
+game   5  py-mcts (W) vs cpp-alphabeta(B)  0-1       26 plies (checkmate)
+game   6  cpp-alphabeta(W) vs py-mcts (B)  1-0       27 plies (checkmate)
+game   7  py-mcts (W) vs cpp-alphabeta(B)  0-1       62 plies (checkmate)
+game   8  cpp-alphabeta(W) vs py-mcts (B)  1-0       53 plies (checkmate)
+game   9  py-mcts (W) vs cpp-alphabeta(B)  0-1       24 plies (checkmate)
+game  10  cpp-alphabeta(W) vs py-mcts (B)  1-0       41 plies (checkmate)
+game  11  py-mcts (W) vs cpp-alphabeta(B)  0-1       36 plies (checkmate)
+game  12  cpp-alphabeta(W) vs py-mcts (B)  1-0       47 plies (checkmate)
+game  13  py-mcts (W) vs cpp-alphabeta(B)  0-1       46 plies (checkmate)
+game  14  cpp-alphabeta(W) vs py-mcts (B)  1-0       35 plies (checkmate)
+game  15  py-mcts (W) vs cpp-alphabeta(B)  0-1       30 plies (checkmate)
+game  16  cpp-alphabeta(W) vs py-mcts (B)  1-0       33 plies (checkmate)
+game  17  py-mcts (W) vs cpp-alphabeta(B)  0-1       24 plies (checkmate)
+game  18  cpp-alphabeta(W) vs py-mcts (B)  1-0       23 plies (checkmate)
+game  19  py-mcts (W) vs cpp-alphabeta(B)  0-1       52 plies (checkmate)
+game  20  cpp-alphabeta(W) vs py-mcts (B)  1-0       35 plies (checkmate)
+game  21  py-mcts (W) vs cpp-alphabeta(B)  0-1       34 plies (checkmate)
+game  22  cpp-alphabeta(W) vs py-mcts (B)  1-0       11 plies (checkmate)
+game  23  py-mcts (W) vs cpp-alphabeta(B)  0-1       76 plies (checkmate)
+game  24  cpp-alphabeta(W) vs py-mcts (B)  1/2-1/2   36 plies (repetition)
+game  25  py-mcts (W) vs cpp-alphabeta(B)  0-1       42 plies (checkmate)
+game  26  cpp-alphabeta(W) vs py-mcts (B)  1-0       27 plies (checkmate)
+game  27  py-mcts (W) vs cpp-alphabeta(B)  0-1       38 plies (checkmate)
+game  28  cpp-alphabeta(W) vs py-mcts (B)  1-0       39 plies (checkmate)
+game  29  py-mcts (W) vs cpp-alphabeta(B)  0-1       54 plies (checkmate)
+game  30  cpp-alphabeta(W) vs py-mcts (B)  1-0       35 plies (checkmate)
+game  31  py-mcts (W) vs cpp-alphabeta(B)  0-1       46 plies (checkmate)
+game  32  cpp-alphabeta(W) vs py-mcts (B)  1-0       43 plies (checkmate)
+game  33  py-mcts (W) vs cpp-alphabeta(B)  0-1       42 plies (checkmate)
+game  34  cpp-alphabeta(W) vs py-mcts (B)  1-0       31 plies (checkmate)
+game  35  py-mcts (W) vs cpp-alphabeta(B)  0-1       38 plies (checkmate)
+game  36  cpp-alphabeta(W) vs py-mcts (B)  1-0       43 plies (checkmate)
+game  37  py-mcts (W) vs cpp-alphabeta(B)  0-1       46 plies (checkmate)
+game  38  cpp-alphabeta(W) vs py-mcts (B)  1/2-1/2   43 plies (repetition)
+game  39  py-mcts (W) vs cpp-alphabeta(B)  0-1       38 plies (checkmate)
+
+==== summary ====
+games completed : 40 / 40
+cpp-alphabeta wins: 37   py-mcts wins: 0   draws: 3
+protocol errors : 0
+timeouts        : 0
+illegal moves   : 0
+log written to  : runs/gate5_nodes.jsonl
+
+GATE 2: PASS

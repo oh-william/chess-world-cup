@@ -82,7 +82,7 @@ clean 100-game match with honest latency logs and no JIT contamination.
 | **2 — protocol conformance** | `random` survives 100 self-games, zero errors | ✅ **green** |
 | **3 — warm-up isolation** | NPS curve flat over moves 1–20 | ✅ **green** (C++; revisit w/ py-mcts) |
 | **4 — timing honesty** | orchestrator−self delta small & stable | ✅ **green** |
-| 5 — the experiment in miniature | rank flips between fixed-node and wall-clock | ⬜ not started |
+| **5 — the experiment in miniature** | fixed-node vs wall-clock gap = language tax | ✅ **measured** |
 
 ### Gate 1 results (`libchess`)
 
@@ -177,6 +177,69 @@ measurable — expected for the anchor.)
 python3 analysis/report.py match.jsonl
 ```
 
+### Gate 5 results (`py-mcts` + the language-tax experiment)
+
+`py-mcts` is the **knowledge pole**: UCT Monte-Carlo Tree Search with eval-guided leaf
+values (best-first search over the *same* handcrafted eval), written in Python and reusing
+the perft-clean core over a **C ABI** (`ctypes`). It cannot win on nodes/sec, so it must
+win on Elo-per-node.
+
+The experiment: `cpp-alphabeta` vs `py-mcts`, **40 games at fixed nodes**, then **40 games
+at fixed wall-clock** (100 ms), same forced book, colors alternated.
+
+| | Fixed-Node (equal thinking budget) | Wall-Clock (equal time budget) |
+|---|---|---|
+| cpp-alphabeta score share | **96.2 %** (37–0–3) | **100 %** (40–0–0) |
+| py-mcts score share | 3.8 % (three draws) | 0 % |
+| cpp-alphabeta NPS | 1.44 M | 1.39 M |
+| py-mcts NPS | 0.33 M | 0.32 M |
+
+**The measurement:** py-mcts's only footholds — three draws at equal *nodes* — **evaporate
+when the budget becomes equal *time***, because Python + FFI runs at **~4.4× fewer
+nodes/sec** and gets starved. That widening gap, from a measured 4.4× speed penalty, is the
+**language tax** isolated for the first time on a field of two.
+
+Honest caveat: the rank did **not** fully flip (C++ wins both), because vanilla UCT with
+averaging backups is weaker *per node* than alpha-beta in tactical chess — an algorithm gap
+that partly masks the language gap. The clean, defensible tax here is the **4.4× throughput
+penalty** and the score-share shift it drives. Both matches ran with **0 protocol errors /
+timeouts / illegal moves**, and fixed-node mode is bit-reproducible.
+
+---
+
+## Spectator UI + prediction markets
+
+A dependency-free web app (vanilla JS + Python stdlib server) to watch the tournament,
+step through games, read World-Cup-style standings, track the gates, and trade **Kalshi-style
+event contracts** derived from the results.
+
+![Chess World Cup broadcast UI](docs/ui-preview.svg)
+
+- **📺 Broadcast** — pick an event + game, play/step/scrub through the board move-by-move,
+  with a live *implementation-tax meter* (cumulative `orch − self` ms) and per-move telemetry.
+- **🏆 Standings** — engine "teams" with flag, language badge, W-D-L, points, score %, NPS,
+  latency and tax percentiles.
+- **✅ Gates** — the five verification gates with pass/fail and key numbers.
+- **📈 Markets** — an automated market maker (LMSR) over contracts like *"cpp-alphabeta wins
+  the Wall-Clock match"* and *"the language tax is real"*. Play money, price history, then
+  **resolve** against the true tournament outcome.
+
+```bash
+# 1. run some matches (writes runs/*.jsonl)
+./build/orchestrator --engine1 ./build/cpp-alphabeta --engine2 ./bots/py-mcts/py-mcts \
+    --games 40 --nodes 20000 --log runs/gate5_nodes.jsonl
+# 2. compile the logs into the site payload
+python3 analysis/build_site_data.py \
+    --event fixed-node "Fixed-Node Match" runs/gate5_nodes.jsonl \
+    --event wall-clock "Wall-Clock Match" runs/gate5_time.jsonl \
+    --out ui/data/tournament.json
+# 3. serve it
+python3 ui/serve.py            # -> http://localhost:8000
+```
+
+> Note: `CLAUDE.md` scopes the UI out of Phase 0. It is built here as the Phase-1
+> presentation layer on top of the real data the gates produce.
+
 ---
 
 ## Build & run
@@ -195,17 +258,18 @@ Requires a C++20 compiler and CMake ≥ 3.16.
 ## Repo layout
 
 ```
-/libchess          C++ bitboard core + UCI move helpers   (Gate 1 ✅)
+/libchess          C++ bitboard core + UCI helpers + C ABI (Gate 1 ✅)
 /shim/cpp          UCI shim, C++                           (built ✅)
-/shim/py           UCI shim, Python                        (not started)
+/shim/py           UCI shim, Python (ctypes + FFI board)   (built ✅)
 /bots/cpp-alphabeta  classical alpha-beta — the speed pole (built ✅)
-/bots/py-mcts        Python MCTS — the knowledge pole      (not started)
+/bots/py-mcts        Python MCTS — the knowledge pole      (built ✅)
 /bots/random         uniform random — Elo anchor & canary  (built ✅)
 /orchestrator      match runner, timing, logging, referee  (built ✅)
-/analysis          NPS curve, latency + delta tables (report.py ✅)
+/analysis          NPS/latency/tax report + site builder   (built ✅)
 /books             forced opening book (UCI move lists)    (openings.txt ✅)
 /tests             perft suite (perft.cpp)                 (Gate 1 ✅)
-/docker            one Dockerfile per bot + base images    (not started)
+/docker            one Dockerfile per bot + base image      (scaffold ✅)
+/ui                spectator UI + LMSR markets (static)     (built ✅)
 ```
 
 ---

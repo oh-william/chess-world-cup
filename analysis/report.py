@@ -63,6 +63,7 @@ def main():
         sys.exit(2)
 
     rows = load(sys.argv[1:])
+    rows = [r for r in rows if r.get("type", "move") == "move"]  # skip result records
     if not rows:
         print("no rows loaded")
         sys.exit(1)
