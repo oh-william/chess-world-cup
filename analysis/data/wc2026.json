@@ -1,17 +1,17 @@
 {
-  "_note": "Real 2026 FIFA World Cup draw (Dec 5 2025) + FIFA Men's ranking points (Jun 11 2026). Top-20 points are exact from FIFA; teams outside the top 20 use approximate ranking points for strength modeling. Source: en.wikipedia.org/wiki/2026_FIFA_World_Cup_draw, FIFA/Wikipedia rankings.",
+  "_note": "Real 2026 FIFA World Cup draw (Dec 5 2025). FIFA Men's ranking points: top-20 exact (Wikipedia, Jun 11 2026); most others from football-ranking.com (Jul 2026). A handful of the lowest-ranked sides (Qatar, Saudi Arabia, Tunisia, Cape Verde, Uzbekistan, Jordan, South Africa, Ghana, Iraq, New Zealand, Haiti, Curacao, Bosnia, Sweden) use close approximations where a published point value wasn't available. Sources: en.wikipedia.org/wiki/2026_FIFA_World_Cup_draw, FIFA/Wikipedia rankings, football-ranking.com.",
   "groups": {
-    "A": [["Mexico","MX",1,1687.48],["South Korea","KR",2,1575.0],["South Africa","ZA",3,1445.0],["Czechia","CZ",4,1491.0]],
-    "B": [["Canada","CA",1,1531.0],["Switzerland","CH",2,1650.06],["Qatar","QA",3,1451.0],["Bosnia & Herzegovina","BA",4,1495.0]],
-    "C": [["Brazil","BR",1,1765.86],["Morocco","MA",2,1755.1],["Scotland","SCT",3,1503.0],["Haiti","HT",4,1284.0]],
-    "D": [["United States","US",1,1671.23],["Australia","AU",2,1501.0],["Paraguay","PY",3,1483.0],["Turkey","TR",4,1560.0]],
-    "E": [["Germany","DE",1,1735.77],["Ecuador","EC",2,1586.0],["Ivory Coast","CI",3,1492.0],["Curacao","CW",4,1288.0]],
+    "A": [["Mexico","MX",1,1687.48],["South Korea","KR",2,1558.72],["South Africa","ZA",3,1445.0],["Czechia","CZ",4,1467.26]],
+    "B": [["Canada","CA",1,1571.34],["Switzerland","CH",2,1650.06],["Qatar","QA",3,1451.0],["Bosnia & Herzegovina","BA",4,1495.0]],
+    "C": [["Brazil","BR",1,1765.86],["Morocco","MA",2,1755.1],["Scotland","SCT",3,1491.22],["Haiti","HT",4,1284.0]],
+    "D": [["United States","US",1,1671.23],["Australia","AU",2,1581.51],["Paraguay","PY",3,1542.48],["Turkey","TR",4,1582.54]],
+    "E": [["Germany","DE",1,1735.77],["Ecuador","EC",2,1592.59],["Ivory Coast","CI",3,1565.48],["Curacao","CW",4,1288.0]],
     "F": [["Netherlands","NL",1,1753.57],["Japan","JP",2,1661.58],["Tunisia","TN",3,1501.0],["Sweden","SE",4,1560.0]],
-    "G": [["Belgium","BE",1,1742.24],["Egypt","EG",2,1518.0],["Iran","IR",3,1619.58],["New Zealand","NZ",4,1300.0]],
+    "G": [["Belgium","BE",1,1742.24],["Egypt","EG",2,1597.05],["Iran","IR",3,1619.58],["New Zealand","NZ",4,1300.0]],
     "H": [["Spain","ES",1,1874.71],["Saudi Arabia","SA",2,1418.0],["Cape Verde","CV",3,1380.0],["Uruguay","UY",4,1673.07]],
-    "I": [["France","FR",1,1870.7],["Senegal","SN",2,1684.07],["Norway","NO",3,1531.0],["Iraq","IQ",4,1402.0]],
-    "J": [["Argentina","AR",1,1877.27],["Algeria","DZ",2,1503.0],["Austria","AT",3,1580.0],["Jordan","JO",4,1389.0]],
-    "K": [["Portugal","PT",1,1767.85],["Colombia","CO",2,1698.35],["Uzbekistan","UZ",3,1437.0],["DR Congo","CD",4,1476.0]],
-    "L": [["England","ENG",1,1828.02],["Croatia","HR",2,1714.87],["Ghana","GH",3,1460.0],["Panama","PA",4,1441.0]]
+    "I": [["France","FR",1,1870.7],["Senegal","SN",2,1684.07],["Norway","NO",3,1651.29],["Iraq","IQ",4,1402.0]],
+    "J": [["Argentina","AR",1,1877.27],["Algeria","DZ",2,1576.8],["Austria","AT",3,1598.82],["Jordan","JO",4,1389.0]],
+    "K": [["Portugal","PT",1,1767.85],["Colombia","CO",2,1698.35],["Uzbekistan","UZ",3,1437.0],["DR Congo","CD",4,1495.48]],
+    "L": [["England","ENG",1,1828.02],["Croatia","HR",2,1714.87],["Ghana","GH",3,1460.0],["Panama","PA",4,1478.42]]
   }
 }

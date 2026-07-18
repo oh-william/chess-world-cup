@@ -30,7 +30,8 @@ KO_BUDGET = 10000
 # points; node budget is derived from rating. Engine/language is only a
 # cosmetic "flavour" assigned by pot — it does NOT drive strength.
 RATING_A = 1650.0     # rating of a 1550-point FIFA side
-RATING_B = 0.55       # rating gained per FIFA point over 1550
+RATING_B = 0.44       # rating gained per FIFA point over 1550 (tuned so the most
+                      # extreme mismatch, e.g. Spain vs Haiti, is ~75-80%, not ~88%)
 NODE_ANCHOR = 1770    # rating that maps to NODE_BASE nodes
 NODE_BASE = 6000
 NODE_SLOPE = 120      # rating points per doubling of node budget

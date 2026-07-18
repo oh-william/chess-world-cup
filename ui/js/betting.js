@@ -98,7 +98,7 @@
   let PARLAY = [];            // pending parlay legs [{matchId, outcome, p, label}]
   const teamName = tid => {
     const t = TOURN && TOURN.teams && TOURN.teams[tid];
-    return t ? t.country : ("#" + tid);
+    return t ? (t.name || t.country) : ("#" + tid);
   };
   const teamEngine = tid => {
     const t = TOURN && TOURN.teams && TOURN.teams[tid];
@@ -767,7 +767,7 @@
       return p;
     }
     const rows = SIM.teams.filter(t => t.champion_pct > 0).slice(0, 10).map(t => ({
-      label: CWC.flag(t.country) + " " + t.country,
+      label: CWC.flag(t.country) + " " + (t.name || t.country),
       value: t.champion_pct * 100,
       annot: (t.champion_pct * 100).toFixed(1) + "%",
       color: CWC.langColor(langForEngine(t.engine))

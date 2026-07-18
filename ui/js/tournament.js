@@ -76,7 +76,7 @@
       country = e.country; lang = e.lang; label = t; engine = t;
     } else if (t) {
       country = t.country; lang = t.lang; engine = t.engine; tid = t.id;
-      label = opts.label || t.code || t.name || t.country;
+      label = opts.label || t.name || t.code || t.country;
     } else {
       country = "XX"; lang = "?"; label = "?"; engine = "?";
     }
