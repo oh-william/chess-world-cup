@@ -40,6 +40,9 @@
 .btn:hover{ border-color:var(--line-strong); background:var(--surface-3); }
 .btn:disabled{ opacity:.5; cursor:not-allowed; }
 .btn .ico{ width:16px; height:16px; }
+/* Default icon size so any unscoped <svg class="ico"> (e.g. the wallet chip)
+   never balloons to fill its container. Context rules above override this. */
+.ico{ width:16px; height:16px; flex:none; vertical-align:-.15em; }
 .btn--primary{ background:var(--accent); color:var(--accent-ink); border-color:var(--accent); }
 .btn--primary:hover{ background:color-mix(in srgb,var(--accent) 85%,var(--white-mix)); }
 .btn--ghost{ background:transparent; color:var(--ink-2); }

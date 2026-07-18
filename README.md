@@ -244,7 +244,7 @@ A dependency-free web app (vanilla JS, no build step; Python stdlib server) orga
 implemented by a parallel agent swarm; the code lives in `ui/js/*` (a `CWC` namespace) and
 `ui/css/*` (design tokens + components), served statically or by the live server.
 
-![Chess World Cup broadcast UI](docs/ui-preview.svg)
+![Chess World Cup — the Tournament view](docs/ui-preview.png)
 
 - **Tournament** — the 48-team World Cup you play yourself (needs the live server): 12 groups
   of 4, **win 3 / draw 1 / loss 0**, tie-broken by piece-difference → pieces captured → fewer

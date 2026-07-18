@@ -53,7 +53,9 @@
     return [1 / 3, 1 / 3, 1 / 3];
   }
   const OUTCOME_IDX = { W: 0, D: 1, L: 2 };
-  function decimalOdds(p) { return p > 1e-9 ? 1 / p : 999; }
+  // Cap at 99× so a near-impossible outcome (e.g. a draw between wildly
+  // mismatched teams) reads "99.00" instead of "235608.51", and payouts stay sane.
+  function decimalOdds(p) { return Math.min(99, p > 1e-9 ? 1 / p : 99); }
 
   /* ---------------- LMSR (client-local price discovery) ---------------- */
   function lmsrPrice(q) {

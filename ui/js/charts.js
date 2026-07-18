@@ -113,7 +113,9 @@
     /* ---- slope ---- */
     slope(el, cfg) {
       const w = cfg.w || 480, h = cfg.h || 320;
-      const pad = { t: 30, b: 20, l: 70, r: 70 };
+      // Left labels carry "engine-name NN%" (~130px); give them room so they
+      // don't clip. Right labels are just the value, so less padding is fine.
+      const pad = { t: 30, b: 20, l: 148, r: 84 };
       const rows = cfg.rows || [];
       const fmt = cfg.fmt || (v => String(v));
       const vals = []; rows.forEach(r => { vals.push(r.a, r.b); });
@@ -178,7 +180,7 @@
     /* ---- scatter ---- */
     scatter(el, cfg) {
       const w = cfg.w || 560, h = cfg.h || 360;
-      const pad = { t: 14, r: 16, b: 34, l: 46 };
+      const pad = { t: 20, r: 24, b: 34, l: 46 };
       const iw = w - pad.l - pad.r, ih = h - pad.t - pad.b;
       const pts = cfg.points || [];
       const xs = pts.map(p => p.x), ys = pts.map(p => p.y);
@@ -196,7 +198,12 @@
       pts.forEach(p => {
         svg.appendChild(svgEl("circle", { cx: sx(p.x).toFixed(1), cy: sy(p.y).toFixed(1), r: 5, fill: color(p.color), opacity: 0.85 }));
         if (p.label) {
-          const t = svgEl("text", { x: sx(p.x) + 8, y: sy(p.y) + 4, fill: "var(--ink-2)", "font-size": 11 });
+          // Anchor labels inward near the right edge so they never clip off-canvas.
+          const px = sx(p.x), py = sy(p.y);
+          const nearRight = px > pad.l + iw * 0.7;
+          const ty = Math.max(pad.t + 8, py + 4);
+          const t = svgEl("text", { x: nearRight ? px - 8 : px + 8, y: ty,
+            "text-anchor": nearRight ? "end" : "start", fill: "var(--ink-2)", "font-size": 11 });
           t.textContent = p.label; svg.appendChild(t);
         }
       });

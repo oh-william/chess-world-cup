@@ -290,29 +290,12 @@ def main():
         "engines": all_engines,
         "events": events,
         "gates": build_gates(events_by_id, all_engines),
-        "markets": build_markets(events_by_id, all_engines),
     }
+    # Betting/odds are unified under the `contracts`/`odds` blocks below; the old
+    # static `markets` block is retired (the UI no longer reads it).
     if args.bracket and os.path.exists(args.bracket):
         with open(args.bracket) as f:
-            br = json.load(f)
-        out["bracket"] = br
-        # Knockout markets with real outcomes.
-        top_seed = next((s["engine"] for s in br["seeds"] if s["seed"] == 1), None)
-        if top_seed:
-            out["markets"].append({
-                "id": "ko-topseed", "event": "Knockout",
-                "label": f"top seed {top_seed} lifts the trophy",
-                "desc": "Does the group-stage winner convert its seeding into the title?",
-                "outcome": "YES" if br["champion"] == top_seed else "NO"})
-        final = br["rounds"][-1]["ties"][0] if br["rounds"] else None
-        if final:
-            finalists = [final["a"], final["b"]]
-            py_final = any(all_engines.get(n, {}).get("lang") == "Python" for n in finalists)
-            out["markets"].append({
-                "id": "ko-py-final", "event": "Knockout",
-                "label": "a Python engine reaches the Final",
-                "desc": "Can an interpreted engine survive the knockout to the last match?",
-                "outcome": "YES" if py_final else "NO"})
+            out["bracket"] = json.load(f)
     # ADDITIVE blocks (existing keys above are untouched).
     analysis = build_analysis_block([(eid, path) for eid, _label, path in args.event])
     if analysis:
@@ -332,8 +315,7 @@ def main():
         extra.append(f"{len(out['contracts'])} contracts")
     print(f"wrote {args.out} ({size/1024:.0f} KB): "
           f"{len(events)} events, {len(all_engines)} engines, "
-          f"{sum(len(e['games']) for e in events)} games, "
-          f"{len(out['markets'])} markets"
+          f"{sum(len(e['games']) for e in events)} games"
           + (" | " + ", ".join(extra) if extra else ""))
 
 

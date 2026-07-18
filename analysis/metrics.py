@@ -117,6 +117,17 @@ _SPECTRUM_NPS = {
 }
 
 
+def _load_nps_bench():
+    """Measured startpos NPS per engine from runs/nps_bench.json (if present)."""
+    path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                        "runs", "nps_bench.json")
+    try:
+        with open(path) as f:
+            return json.load(f).get("nps", {})
+    except (OSError, ValueError):
+        return {}
+
+
 def _load_move_rows(path):
     """Read a match JSONL into (move_rows, result_rows)."""
     moves, results = [], []
@@ -150,7 +161,7 @@ def _score_share(results, engine):
                 w += 1
         else:
             d += 1
-    return (w + 0.5 * d) / g if g else 0.0
+    return (w + 0.5 * d) / g if g else None  # None => engine didn't play this event
 
 
 def build_analysis(sources):
@@ -207,10 +218,12 @@ def build_analysis(sources):
         }
 
     # --- spectrum: same algorithm, four languages, NPS + tax multiplier ---
+    bench = _load_nps_bench()  # measured startpos throughput, if present
     spec_nps = {}
     for name in _SPECTRUM_ORDER:
-        # Prefer the canonical startpos benchmark; fall back to measured NPS.
-        nm = _SPECTRUM_NPS.get(name) or nps_mean(spectrum_moves, name)
+        # Prefer the measured startpos benchmark (runs/nps_bench.json), then the
+        # canonical constant, then noisy tournament NPS.
+        nm = bench.get(name) or _SPECTRUM_NPS.get(name) or nps_mean(spectrum_moves, name)
         if nm:
             spec_nps[name] = nm
     cpp_nps = spec_nps.get("cpp-alphabeta")

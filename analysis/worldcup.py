@@ -171,7 +171,10 @@ class WorldCup:
             "reason": result["reason"] if result else "?",
             "plies": result["plies"] if result else len(moves),
             "white_captured": 16 - bcnt, "black_captured": 16 - wcnt,
-            "moves": [{"uci": m["move"], "fen": m["fen"]} for m in moves],
+            "moves": [{"uci": m["move"], "fen": m["fen"], "engine": m.get("engine"),
+                       "color": m.get("color"), "orch_ms": m.get("orch_ms"),
+                       "self_ms": m.get("self_ms"), "delta_ms": m.get("delta_ms"),
+                       "self_nodes": m.get("self_nodes")} for m in moves],
             "positions": positions,
         }
 

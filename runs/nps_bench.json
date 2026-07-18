@@ -1,0 +1,9 @@
+{
+ "ms": 300,
+ "nps": {
+  "cpp-alphabeta": 3665573,
+  "rs-alphabeta": 2263214,
+  "js-alphabeta": 1735593,
+  "py-alphabeta": 171237
+ }
+}
