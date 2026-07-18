@@ -10,3 +10,4 @@ runs/live.jsonl
 bots/rs-alphabeta/target/
 runs/bracket_live.json
 runs/*_live.jsonl
+runs/worldcup.json

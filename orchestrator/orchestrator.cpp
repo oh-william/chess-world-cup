@@ -35,6 +35,7 @@ struct Options {
     bool nodes_mode = false;
     long long movetime = 100; // ms
     long long nodes = 100000;
+    long long warmup_ms = 2000; // discarded warm-up; <=0 skips it
     unsigned long long seed1 = 1, seed2 = 2;
 };
 
@@ -93,10 +94,13 @@ bool handshake(Engine& e) {
 }
 
 // Discarded warm-up so we measure chess, not JIT/first-call allocation.
+// Skipped when warmup_ms <= 0 (e.g. the casual World Cup, where it isn't the
+// measurement that matters and per-match latency should stay low).
 void warmup(Engine& e, const Options& o) {
+    if (o.warmup_ms <= 0) return;
     e.proc.send("position startpos");
     if (o.nodes_mode) e.proc.send("go nodes " + std::to_string(o.nodes));
-    else              e.proc.send("go movetime 2000");
+    else              e.proc.send("go movetime " + std::to_string(o.warmup_ms));
     std::string line; bool to;
     while (e.proc.read_line(line, 10000, to)) {
         if (!split(line).empty() && split(line).front() == "bestmove") break;
@@ -180,6 +184,7 @@ int main(int argc, char** argv) {
         else if (a == "--book") o.book = next();
         else if (a == "--log") o.log = next();
         else if (a == "--games") o.games = std::stoi(next());
+        else if (a == "--warmup-ms") o.warmup_ms = std::stoll(next());
         else if (a == "--movetime") { o.movetime = std::stoll(next()); o.nodes_mode = false; }
         else if (a == "--nodes") { o.nodes = std::stoll(next()); o.nodes_mode = true; }
         else if (a == "--seed1") o.seed1 = std::stoull(next());

@@ -16,8 +16,15 @@ import os
 import subprocess
 import threading
 import time
+from urllib.parse import urlparse, parse_qs
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+import sys
+sys.path.insert(0, os.path.join(ROOT, "analysis"))
+from worldcup import WorldCup  # noqa: E402
+
+WC = WorldCup.load()
+WC_LOCK = threading.Lock()
 UI_DIR = os.path.join(ROOT, "ui")
 LIVE_LOG = os.path.join(ROOT, "runs", "live.jsonl")
 
@@ -134,6 +141,26 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             req = json.loads(self.rfile.read(n) or b"{}")
             start_bracket(int(req.get("budget", 12000)), int(req.get("games", 4)))
             return self._json({"ok": True})
+        if self.path.startswith("/api/tournament/"):
+            return self.tournament_post()
+        self.send_error(404)
+
+    def tournament_post(self):
+        n = int(self.headers.get("Content-Length", 0))
+        req = json.loads(self.rfile.read(n) or b"{}")
+        action = self.path.rsplit("/", 1)[1]
+        with WC_LOCK:
+            if action == "play":
+                m = WC.play(req.get("match_id"))
+                WC.save()
+                return self._json({"ok": bool(m), "match": WC.public_match(m) if m else None,
+                                   "state": WC.public_state()})
+            if action == "advance":
+                WC.advance(); WC.save()
+                return self._json({"ok": True, "state": WC.public_state()})
+            if action == "reset":
+                WC.new(req.get("seed")); WC.save()
+                return self._json({"ok": True, "state": WC.public_state()})
         self.send_error(404)
 
     def do_GET(self):
@@ -144,6 +171,13 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return self.stream()
         if self.path == "/api/bracket-stream":
             return self.bracket_stream()
+        if self.path == "/api/tournament":
+            with WC_LOCK:
+                return self._json(WC.public_state())
+        if self.path.startswith("/api/tournament/game"):
+            qs = parse_qs(urlparse(self.path).query)
+            with WC_LOCK:
+                return self._json({"game": WC.game_of(qs.get("id", [""])[0])})
         # static files from ui/
         return super().do_GET()
 

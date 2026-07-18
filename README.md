@@ -245,6 +245,16 @@ event contracts** derived from the results.
 
 ![Chess World Cup broadcast UI](docs/ui-preview.svg)
 
+- **🌍 World Cup** — a full **48-team tournament you play yourself** (needs the live server).
+  48 engine-backed national teams are drawn (seeded pots) into **12 groups of 4**; **win 3,
+  draw 1, loss 0**, tie-broken by piece-difference, pieces captured, then fewer moves. You
+  click **▶ Play** on any fixture to run that match on demand — nothing auto-plays. **Top two
+  of each group + the 8 best third-placed teams** advance to a **Round of 32** knockout you
+  play the same way, through to a champion. Every fixture shows **implied W/D/L odds** derived
+  from the engines' *historical* head-to-head record (Elo-modelled where there's little data),
+  and you can place **play-money bets** at those odds that settle when the match is played.
+  Click any finished match to **step through it move-by-move** in the game viewer. (World Cup
+  matches skip the warm-up — they're the casual event, not the measurement.)
 - **📺 Broadcast** — pick an event + game, play/step/scrub through the board move-by-move,
   with a live *implementation-tax meter* (cumulative `orch − self` ms) and per-move telemetry.
 - **🔴 Live** — watch a match stream **in real time** over Server-Sent Events: the board

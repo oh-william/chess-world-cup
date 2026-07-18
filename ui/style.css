@@ -84,6 +84,43 @@ select { background: var(--panel2); color: var(--ink); border: 1px solid var(--l
 .movelist .mv.cur { background: var(--accent); color: #1a1a1a; }
 .movelist .num { color: var(--dim); margin-left: 6px; }
 
+/* World Cup */
+.wc-header { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 8px; }
+.wc-stage { font-size: 17px; font-weight: 700; }
+.wc-wallet { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 6px 12px; font-variant-numeric: tabular-nums; margin-left: auto; }
+.wc-groups { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 14px; }
+.group-card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px; }
+.group-name { font-weight: 700; margin-bottom: 8px; }
+.group-table { width: 100%; margin-bottom: 10px; }
+.group-table th, .group-table td { padding: 4px 6px; font-size: 12px; border-bottom: 1px solid var(--line); }
+.group-table tbody tr.qual { background: rgba(52,211,153,.08); }
+.group-table tbody tr.third { background: rgba(240,180,41,.07); }
+.team-chip { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; }
+.team-chip .flag { font-size: 15px; } .team-chip .eng { color: var(--dim); font-size: 10px; }
+.group-fixtures { display: flex; flex-direction: column; gap: 6px; }
+.match { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12px;
+  background: var(--panel2); border: 1px solid var(--line); border-radius: 7px; padding: 6px 8px; }
+.match .score { font-weight: 700; font-variant-numeric: tabular-nums; }
+.match .mreason { color: var(--dim); font-size: 11px; }
+.match-controls { display: flex; align-items: center; gap: 6px; margin-left: auto; flex-wrap: wrap; }
+.odds-bar { display: inline-flex; width: 90px; height: 8px; border-radius: 20px; overflow: hidden; flex: 0 0 auto; }
+.odds-bar span { display: block; } .odds-bar .ow { background: var(--green); } .odds-bar .od { background: var(--dim); } .odds-bar .ol { background: var(--red); }
+.bet-row { display: flex; gap: 4px; }
+.betb { background: var(--panel); border: 1px solid var(--line); color: var(--ink); border-radius: 6px;
+  padding: 3px 7px; cursor: pointer; font-size: 11px; }
+.betb:hover { border-color: var(--accent); } .betb em { color: var(--accent); font-style: normal; }
+.betb-W:hover { border-color: var(--green); } .betb-L:hover { border-color: var(--red); }
+.bet-line { color: var(--dim); font-size: 11px; } .bet-line .won { color: var(--green); font-weight: 700; } .bet-line .lost { color: var(--red); }
+.playbtn { border-color: var(--accent) !important; color: var(--accent) !important; }
+.viewbtn { color: var(--dim); }
+.ko-tie { min-width: 200px; } .ko-foot { display: flex; align-items: center; gap: 8px; justify-content: space-between;
+  padding: 6px 10px; border-top: 1px solid var(--line); color: var(--dim); font-size: 11px; }
+.viewer-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.7); z-index: 50; display: flex;
+  align-items: center; justify-content: center; padding: 20px; }
+.viewer { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; max-width: 460px; width: 100%; }
+.viewer-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; font-weight: 600; }
+.viewer-body .board { max-width: 420px; margin: 0 auto; }
+
 /* Live */
 .live-controls { display: flex; align-items: flex-end; gap: 14px; flex-wrap: wrap; margin-bottom: 16px;
   background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }

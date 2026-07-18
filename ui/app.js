@@ -516,6 +516,267 @@ async function initLive() {
   liveConnect();
 }
 
+// ---------- world cup ----------
+const WC = { data: null, init: false, wallet: null, viewer: null, busy: false };
+const LANG_COLOR = { "C++": "#e63946", Rust: "#dea584", JavaScript: "#f7df1e", Python: "#f4a261" };
+const WC_KEY = "cwc_worldcup_v1", WC_START = 1000, WC_STAKE = 25;
+
+function wcTeam(tid) { return WC.data.teams[tid]; }
+function wcChip(tid) {
+  const t = wcTeam(tid), col = LANG_COLOR[t.lang] || "#888";
+  return `<span class="team-chip"><span class="flag">${codeToFlag(t.country)}</span>
+    <span class="dot" style="background:${col}"></span><b>${t.country}</b>
+    <span class="eng">${t.engine}</span></span>`;
+}
+function wcStatus(msg) { id("wc-status").textContent = msg || ""; }
+
+function wcLoadWallet() {
+  try { WC.wallet = JSON.parse(localStorage.getItem(WC_KEY)); } catch (e) { WC.wallet = null; }
+  if (!WC.wallet || WC.wallet.tid !== WC.data.id) {
+    WC.wallet = { tid: WC.data.id, balance: WC_START, bets: {} };
+    wcSaveWallet();
+  }
+}
+function wcSaveWallet() { localStorage.setItem(WC_KEY, JSON.stringify(WC.wallet)); }
+const OUT_IDX = { W: 0, D: 1, L: 2 };
+function wcBet(mid, outcome, odds) {
+  const w = WC.wallet;
+  if (w.bets[mid] || w.balance < WC_STAKE) { wcStatus(w.bets[mid] ? "already bet on this match" : "insufficient balance"); return; }
+  w.balance -= WC_STAKE;
+  w.bets[mid] = { outcome, stake: WC_STAKE, prob: odds[OUT_IDX[outcome]], settled: false };
+  wcSaveWallet(); renderWC();
+}
+function wcSettle(match) {
+  const bet = WC.wallet.bets[match.id];
+  if (!bet || bet.settled) return;
+  const actual = match.winner == null ? "D" : (match.winner === match.a ? "W" : "L");
+  const won = bet.outcome === actual;
+  bet.won = won; bet.payout = won ? bet.stake / bet.prob : 0;
+  WC.wallet.balance += bet.payout; bet.settled = true;
+  wcSaveWallet();
+}
+
+async function wcApi(path, body) {
+  const opt = body ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {};
+  return (await fetch(path, opt)).json();
+}
+async function wcPlay(mid) {
+  if (WC.busy) return;
+  WC.busy = true; wcStatus("▶ playing " + mid + " …");
+  const res = await wcApi("/api/tournament/play", { match_id: mid });
+  if (res.match) wcSettle(res.match);
+  WC.data = res.state; WC.busy = false; wcStatus("");
+  renderWC();
+}
+async function wcAdvance() { WC.data = (await wcApi("/api/tournament/advance", {})).state; renderWC(); }
+async function wcReset() {
+  wcStatus("drawing…");
+  WC.data = (await wcApi("/api/tournament/reset", {})).state;
+  wcLoadWallet(); wcStatus(""); renderWC();
+}
+async function wcAutofill() {
+  if (WC.busy) return;
+  const pending = WC.data.fixtures.filter(f => !f.played).map(f => f.id);
+  for (let k = 0; k < pending.length; k++) {
+    WC.busy = true; wcStatus(`▶ auto-playing group games… ${k + 1}/${pending.length}`);
+    const res = await wcApi("/api/tournament/play", { match_id: pending[k] });
+    if (res.match) wcSettle(res.match);
+    WC.data = res.state; renderWC();
+  }
+  WC.busy = false; wcStatus("group stage complete"); renderWC();
+}
+
+function wcStageLabel(s) {
+  if (s.stage === "group") return `Group Stage — ${s.fixtures.filter(f => f.played).length}/${s.fixtures.length} played`;
+  if (s.stage === "done") return `🏆 Champion: ${s.champion != null ? wcTeam(s.champion).country + " (" + wcTeam(s.champion).engine + ")" : ""}`;
+  const last = s.knockout[s.knockout.length - 1];
+  return "Knockout — " + last.name;
+}
+
+function oddsBar(odds) {
+  const [w, d, l] = odds.map(x => Math.round(x * 100));
+  return `<div class="odds-bar" title="W ${w}% · D ${d}% · L ${l}%">
+    <span style="width:${w}%" class="ow"></span><span style="width:${d}%" class="od"></span>
+    <span style="width:${l}%" class="ol"></span></div>`;
+}
+function betButtons(m) {
+  const bet = WC.wallet.bets[m.id];
+  if (bet) {
+    const lab = { W: wcTeam(m.a).country, D: "Draw", L: wcTeam(m.b).country }[bet.outcome];
+    const st = bet.settled ? (bet.won ? `<span class="won">WON +$${bet.payout.toFixed(0)}</span>` : `<span class="lost">lost</span>`) : "pending";
+    return `<div class="bet-line">bet $${bet.stake} on <b>${lab}</b> @ ${(1 / bet.prob).toFixed(2)} — ${st}</div>`;
+  }
+  return `<div class="bet-row" data-mid="${m.id}">
+    ${betBtn(m, "W", wcTeam(m.a).country)}${betBtn(m, "D", "Draw")}${betBtn(m, "L", wcTeam(m.b).country)}</div>`;
+}
+function betBtn(m, out, lab) {
+  return `<button class="betb betb-${out}">${lab} <em>${(1 / m.odds[OUT_IDX[out]]).toFixed(2)}</em></button>`;
+}
+
+function matchRow(m) {
+  const row = el("div", "match");
+  if (m.played) {
+    const res = m.result === "1/2-1/2" ? "½–½" : m.result;
+    const wtxt = m.winner == null ? "draw" : wcTeam(m.winner).country + " win";
+    row.innerHTML = `${wcChip(m.a)}<span class="score">${res}</span>${wcChip(m.b)}
+      <span class="mreason">${wtxt}${m.tiebreak ? " (" + m.tiebreak + ")" : ""} · ${m.plies}p · ⚔${m.capA}-${m.capB}</span>`;
+    if (m.hasGame) {
+      const v = el("button", "mini viewbtn", "▶ watch");
+      v.onclick = () => wcOpenGame(m.id, `${wcTeam(m.a).country} vs ${wcTeam(m.b).country}`);
+      row.appendChild(v);
+    }
+  } else {
+    row.innerHTML = `${wcChip(m.a)} ${oddsBar(m.odds)} ${wcChip(m.b)}`;
+    const controls = el("div", "match-controls");
+    controls.innerHTML = betButtons(m);
+    const play = el("button", "mini playbtn", "▶ Play");
+    play.onclick = () => wcPlay(m.id);
+    controls.appendChild(play);
+    row.appendChild(controls);
+    // wire bet buttons
+    controls.querySelectorAll(".betb").forEach((btn, i) => {
+      const out = ["W", "D", "L"][i];
+      btn.onclick = () => wcBet(m.id, out, m.odds);
+    });
+  }
+  return row;
+}
+
+function renderWC() {
+  const s = WC.data;
+  id("wc-stage").textContent = wcStageLabel(s);
+  id("wc-balance").textContent = "$" + WC.wallet.balance.toFixed(0);
+  const pnl = WC.wallet.balance - WC_START;
+  const pe = id("wc-pnl"); pe.textContent = (pnl >= 0 ? "+" : "") + "$" + pnl.toFixed(0);
+  pe.style.color = pnl >= 0 ? "var(--green)" : "var(--red)";
+  id("wc-advance").style.display = (s.stage === "group" && s.group_done) ? "inline-block" : "none";
+  id("wc-autofill").style.display = (s.stage === "group" && !s.group_done) ? "inline-block" : "none";
+
+  const groups = id("wc-groups"), ko = id("wc-knockout");
+  groups.innerHTML = ""; ko.innerHTML = "";
+  if (s.stage === "group") {
+    groups.style.display = "grid";
+    s.groups.forEach(g => groups.appendChild(groupCard(g)));
+  } else {
+    groups.style.display = "none";
+    renderWCKnockout(ko, s);
+  }
+}
+
+function groupCard(g) {
+  const card = el("div", "group-card");
+  card.appendChild(el("div", "group-name", "Group " + String.fromCharCode(65 + g.index)));
+  const tbl = el("table", "group-table");
+  tbl.innerHTML = `<thead><tr><th></th><th>Team</th><th class="num">Pl</th><th class="num">Pts</th><th class="num">±⚔</th></tr></thead>`;
+  const tb = el("tbody");
+  g.table.forEach((r, i) => {
+    const cls = i < 2 ? "qual" : (i === 2 ? "third" : "");
+    const tr = el("tr", cls);
+    tr.innerHTML = `<td>${i + 1}</td><td>${wcChip(r.team)}</td><td class="num">${r.P}</td>
+      <td class="num"><b>${r.pts}</b></td><td class="num">${r.cf - r.ca}</td>`;
+    tb.appendChild(tr);
+  });
+  tbl.appendChild(tb); card.appendChild(tbl);
+  const fx = el("div", "group-fixtures");
+  WC.data.fixtures.filter(f => f.group === g.index).forEach(m => fx.appendChild(matchRow(m)));
+  card.appendChild(fx);
+  return card;
+}
+
+function renderWCKnockout(root, s) {
+  (s.knockout || []).forEach(round => {
+    const col = el("div", "bracket-round");
+    col.appendChild(el("div", "round-name", round.name));
+    round.ties.forEach(t => {
+      const card = el("div", "tie ko-tie");
+      if (t.played) {
+        card.appendChild(koSide(t, t.a, t.seedA, t.winner === t.a));
+        card.appendChild(koSide(t, t.b, t.seedB, t.winner === t.b));
+        const foot = el("div", "ko-foot");
+        foot.innerHTML = `${t.result === "1/2-1/2" ? "½–½" : t.result}${t.tiebreak ? " · " + t.tiebreak : ""} · ${t.plies}p`;
+        if (t.hasGame) { const v = el("button", "mini viewbtn", "▶"); v.onclick = () => wcOpenGame(t.id, round.name); foot.appendChild(v); }
+        card.appendChild(foot);
+      } else {
+        card.appendChild(koSide(t, t.a, t.seedA, false));
+        card.appendChild(koSide(t, t.b, t.seedB, false));
+        const ctr = el("div", "ko-foot");
+        ctr.innerHTML = oddsBar(t.odds);
+        const play = el("button", "mini playbtn", "▶ Play"); play.onclick = () => wcPlay(t.id);
+        ctr.appendChild(play);
+        card.appendChild(ctr);
+      }
+      col.appendChild(card);
+    });
+    root.appendChild(col);
+  });
+  if (s.champion != null) {
+    const champ = el("div", "bracket-round champion-col");
+    champ.appendChild(el("div", "round-name", "Champion"));
+    const t = wcTeam(s.champion);
+    const c = el("div", "tie champion-card");
+    c.innerHTML = `<div class="trophy">🏆</div><div class="tie-side win">
+      <span class="flag">${codeToFlag(t.country)}</span>
+      <span class="dot" style="background:${LANG_COLOR[t.lang] || "#888"}"></span>
+      <span class="nm">${t.country}</span><span class="lang">${t.engine}</span></div>`;
+    champ.appendChild(c); root.appendChild(champ);
+  }
+}
+function koSide(t, tid, seed, isWin) {
+  const team = wcTeam(tid);
+  const s = el("div", "tie-side" + (isWin ? " win" : ""));
+  s.innerHTML = `<span class="seed">${seed || ""}</span><span class="flag">${codeToFlag(team.country)}</span>
+    <span class="dot" style="background:${LANG_COLOR[team.lang] || "#888"}"></span>
+    <span class="nm">${team.country}</span><span class="lang">${team.engine}</span>`;
+  return s;
+}
+
+// game viewer modal
+async function wcOpenGame(mid, title) {
+  const g = (await wcApi("/api/tournament/game?id=" + encodeURIComponent(mid))).game;
+  if (!g) return;
+  WC.viewer = { positions: g.positions, moves: g.moves, i: 0, title, play: null };
+  id("wc-viewer-title").textContent = title;
+  id("wc-viewer").style.display = "flex";
+  id("wcv-scrub").max = g.positions.length - 1;
+  wcvShow(0);
+}
+function wcvShow(i) {
+  const v = WC.viewer; if (!v) return;
+  v.i = Math.max(0, Math.min(v.positions.length - 1, i));
+  const mv = v.i > 0 ? v.moves[v.i - 1] : null;
+  renderBoard(v.positions[v.i], mv ? mv.uci : null, "wc-viewer-board");
+  id("wcv-scrub").value = v.i;
+  id("wcv-label").textContent = `${v.i} / ${v.positions.length - 1}`;
+}
+function wcvStop() { if (WC.viewer && WC.viewer.play) { clearInterval(WC.viewer.play); WC.viewer.play = null; } id("wcv-play").textContent = "▶ Play"; }
+function wcvTogglePlay() {
+  const v = WC.viewer; if (!v) return;
+  if (v.play) { wcvStop(); return; }
+  if (v.i >= v.positions.length - 1) wcvShow(0);
+  id("wcv-play").textContent = "⏸ Pause";
+  v.play = setInterval(() => { if (v.i >= v.positions.length - 1) wcvStop(); else wcvShow(v.i + 1); }, 600);
+}
+
+async function initWC() {
+  if (WC.init) return; WC.init = true;
+  try {
+    WC.data = await (await fetch("/api/tournament")).json();
+  } catch (e) { id("wc-unavailable").style.display = "block"; return; }
+  id("wc-main").style.display = "block";
+  wcLoadWallet();
+  id("wc-advance").onclick = wcAdvance;
+  id("wc-reset").onclick = wcReset;
+  id("wc-autofill").onclick = wcAutofill;
+  id("wc-viewer-close").onclick = () => { wcvStop(); id("wc-viewer").style.display = "none"; };
+  id("wcv-start").onclick = () => { wcvStop(); wcvShow(0); };
+  id("wcv-prev").onclick = () => { wcvStop(); wcvShow(WC.viewer.i - 1); };
+  id("wcv-next").onclick = () => { wcvStop(); wcvShow(WC.viewer.i + 1); };
+  id("wcv-end").onclick = () => { wcvStop(); wcvShow(WC.viewer.positions.length - 1); };
+  id("wcv-play").onclick = wcvTogglePlay;
+  id("wcv-scrub").oninput = e => { wcvStop(); wcvShow(+e.target.value); };
+  renderWC();
+}
+
 // ---------- boot ----------
 function initTabs() {
   document.querySelectorAll("#tabs button").forEach(btn => {
@@ -525,6 +786,7 @@ function initTabs() {
       btn.classList.add("active");
       document.getElementById(btn.dataset.tab).classList.add("active");
       if (btn.dataset.tab === "live") initLive();
+      if (btn.dataset.tab === "worldcup") initWC();
     };
   });
 }
@@ -549,6 +811,7 @@ async function boot() {
   renderGates();
   loadMarket();
   renderMarkets();
+  initWC();
 
   // If the live server is up, enable the "Run knockout live" controls.
   try {

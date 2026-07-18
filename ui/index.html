@@ -16,7 +16,8 @@
     </div>
   </div>
   <nav id="tabs">
-    <button data-tab="broadcast" class="active">📺 Broadcast</button>
+    <button data-tab="worldcup" class="active">🌍 World Cup</button>
+    <button data-tab="broadcast">📺 Broadcast</button>
     <button data-tab="live">🔴 Live</button>
     <button data-tab="standings">🏆 Standings</button>
     <button data-tab="bracket">🏟️ Bracket</button>
@@ -27,8 +28,48 @@
 </header>
 
 <main>
+  <!-- WORLD CUP -->
+  <section id="worldcup" class="tab active">
+    <div id="wc-unavailable" class="section-intro" style="display:none">
+      The World Cup runs matches on demand, so it needs the live server. Run
+      <code>python3 ui/live_server.py</code> from the repo root and reload.
+    </div>
+    <div id="wc-main" style="display:none">
+      <div class="wc-header">
+        <div class="wc-stage" id="wc-stage"></div>
+        <div class="wc-wallet">💰 <span id="wc-balance">—</span> · P/L <span id="wc-pnl">—</span></div>
+        <button id="wc-advance" class="live-go" style="display:none">Advance to Knockout ▶</button>
+        <button id="wc-autofill" class="mini">play all remaining group games</button>
+        <button id="wc-reset" class="mini">new draw</button>
+      </div>
+      <div id="wc-status" class="live-status"></div>
+      <div id="wc-groups" class="wc-groups"></div>
+      <div id="wc-knockout" class="bracket"></div>
+    </div>
+  </section>
+
+  <!-- GAME VIEWER (modal) -->
+  <div id="wc-viewer" class="viewer-overlay" style="display:none">
+    <div class="viewer">
+      <div class="viewer-head">
+        <span id="wc-viewer-title"></span>
+        <button id="wc-viewer-close" class="mini">✕ close</button>
+      </div>
+      <div class="viewer-body">
+        <div id="wc-viewer-board" class="board"></div>
+        <div class="controls">
+          <button id="wcv-start">⏮</button><button id="wcv-prev">◀</button>
+          <button id="wcv-play">▶ Play</button><button id="wcv-next">▶▶</button>
+          <button id="wcv-end">⏭</button>
+          <input type="range" id="wcv-scrub" min="0" value="0" step="1">
+          <span id="wcv-label" class="ply-label">0 / 0</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- BROADCAST -->
-  <section id="broadcast" class="tab active">
+  <section id="broadcast" class="tab">
     <div class="broadcast-grid">
       <div class="board-col">
         <div class="plate" id="plate-top"></div>
