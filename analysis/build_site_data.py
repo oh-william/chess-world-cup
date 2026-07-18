@@ -230,6 +230,42 @@ def build_gates(events_by_id, meta):
     return gates
 
 
+def build_analysis_block(event_paths):
+    """ADDITIVE: the top-level `analysis` block consumed by ui/js/analysis.js.
+    Delegates to analysis.metrics (single source of truth, shared with the live
+    /api/analysis route). Returns {} when no rows load."""
+    try:
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        from metrics import build_analysis  # noqa: E402
+        return build_analysis(event_paths)
+    except Exception as e:  # never let the analysis block break the core build
+        print(f"warning: analysis block skipped ({e})", file=sys.stderr)
+        return {}
+
+
+def build_odds_contracts(out):
+    """ADDITIVE + GUARDED: bake worldcup odds/contracts if WS3 has landed the
+    methods. Feature-detected so the build works either way."""
+    try:
+        from worldcup import WorldCup  # noqa: E402
+    except Exception:
+        return
+    try:
+        wc = WorldCup.load()
+    except Exception:
+        return
+    if hasattr(wc, "odds_matrix"):
+        try:
+            out["odds"] = wc.odds_matrix()
+        except Exception as e:
+            print(f"warning: odds block skipped ({e})", file=sys.stderr)
+    if hasattr(wc, "contracts"):
+        try:
+            out["contracts"] = wc.contracts()
+        except Exception as e:
+            print(f"warning: contracts block skipped ({e})", file=sys.stderr)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--event", nargs=3, action="append", metavar=("ID", "LABEL", "PATH"),
@@ -277,14 +313,28 @@ def main():
                 "label": "a Python engine reaches the Final",
                 "desc": "Can an interpreted engine survive the knockout to the last match?",
                 "outcome": "YES" if py_final else "NO"})
+    # ADDITIVE blocks (existing keys above are untouched).
+    analysis = build_analysis_block([(eid, path) for eid, _label, path in args.event])
+    if analysis:
+        out["analysis"] = analysis
+    build_odds_contracts(out)
+
     os.makedirs(os.path.dirname(args.out), exist_ok=True)
     with open(args.out, "w") as f:
         json.dump(out, f)
     size = os.path.getsize(args.out)
+    extra = []
+    if "analysis" in out:
+        extra.append(f"{len(out['analysis'].get('spectrum', []))} spectrum engines")
+    if "odds" in out:
+        extra.append("odds")
+    if "contracts" in out:
+        extra.append(f"{len(out['contracts'])} contracts")
     print(f"wrote {args.out} ({size/1024:.0f} KB): "
           f"{len(events)} events, {len(all_engines)} engines, "
           f"{sum(len(e['games']) for e in events)} games, "
-          f"{len(out['markets'])} markets")
+          f"{len(out['markets'])} markets"
+          + (" | " + ", ".join(extra) if extra else ""))
 
 
 if __name__ == "__main__":

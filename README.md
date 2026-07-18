@@ -237,42 +237,35 @@ above are the cleaner experiment.)*
 
 ---
 
-## Spectator UI + prediction markets
+## Spectator UI
 
-A dependency-free web app (vanilla JS + Python stdlib server) to watch the tournament,
-step through games, read World-Cup-style standings, track the gates, and trade **Kalshi-style
-event contracts** derived from the results.
+A dependency-free web app (vanilla JS, no build step; Python stdlib server) organized into
+**four destinations** on a shared design system. Built to a Senior-Consultant UX spec and
+implemented by a parallel agent swarm; the code lives in `ui/js/*` (a `CWC` namespace) and
+`ui/css/*` (design tokens + components), served statically or by the live server.
 
 ![Chess World Cup broadcast UI](docs/ui-preview.svg)
 
-- **🌍 World Cup** — a full **48-team tournament you play yourself** (needs the live server).
-  48 engine-backed national teams are drawn (seeded pots) into **12 groups of 4**; **win 3,
-  draw 1, loss 0**, tie-broken by piece-difference, pieces captured, then fewer moves. You
-  click **▶ Play** on any fixture to run that match on demand — nothing auto-plays. **Top two
-  of each group + the 8 best third-placed teams** advance to a **Round of 32** knockout you
-  play the same way, through to a champion. Every fixture shows **implied W/D/L odds** derived
-  from the engines' *historical* head-to-head record (Elo-modelled where there's little data),
-  and you can place **play-money bets** at those odds that settle when the match is played.
-  Click any finished match to **step through it move-by-move** in the game viewer. (World Cup
-  matches skip the warm-up — they're the casual event, not the measurement.)
-- **📺 Broadcast** — pick an event + game, play/step/scrub through the board move-by-move,
-  with a live *implementation-tax meter* (cumulative `orch − self` ms) and per-move telemetry.
-- **🔴 Live** — watch a match stream **in real time** over Server-Sent Events: the board
-  updates as each `bestmove` lands, the tax meter ticks up, and a running score builds. Pick
-  the two engines / mode / budget and hit *Start* to launch a fresh match from the browser.
-- **🏆 Standings** — engine "teams" with flag, language badge, W-D-L, points, score %, NPS,
-  latency and tax percentiles, per event (including the round-robin group stage).
-- **🏟️ Bracket** — the single-elimination knockout: seeds, per-tie scores, winners advancing,
-  and the champion. On the live server, **▶ Run knockout live** streams a fresh bracket that
-  fills in round-by-round as ties resolve.
-- **✅ Gates** — the five verification gates with pass/fail and key numbers.
-- **📈 Markets** — an automated market maker (LMSR) over contracts like *"cpp-alphabeta wins
-  the Wall-Clock Duel"* and *"the language tax is real"*. Play money, price history, then
-  **resolve** against the true tournament outcome.
+- **Tournament** — the 48-team World Cup you play yourself (needs the live server): 12 groups
+  of 4, **win 3 / draw 1 / loss 0**, tie-broken by piece-difference → pieces captured → fewer
+  moves; **▶ Play** any fixture on demand; **top two + 8 best thirds → Round of 32** knockout;
+  plus **Standings** (per-event tables with a fixed-node↔wall-clock Δ-rank link) and a **Bracket**
+  sub-view with live exhibition knockouts.
+- **Watch** — one board component, two sources: **Replay** any finished game (SAN movelist,
+  captured-material bars, scrub/step/keyboard, cumulative implementation-tax meter) and **Live**,
+  streaming a running match over Server-Sent Events as each `bestmove` lands.
+- **Betting** — **one** system: every price comes from a single model (`WorldCup.odds()` —
+  empirical head-to-head with Elo fallback). Fixture bets and YES/NO event contracts share **one
+  wallet + ledger**; contracts **open at the true model price** and **settle automatically,
+  server-verified** (no outcome leakage); plus **Monte-Carlo title odds** for the field.
+- **Analysis** — the language tax as a scrollable story, all inline SVG: the claim (hero stats),
+  a fixed-node→wall-clock **slopegraph** (~48%→72% swing), a knowledge-vs-speed **scatter**, the
+  four-language **NPS spectrum** (1.0× / 1.9× / 2.4× / 21×), and the **five gates** as expandable
+  evidence (NPS-by-move curves, latency dot-ranges, perft tables).
 
 ```bash
-# --- LIVE: watch a match stream as it plays ---
-python3 ui/live_server.py      # -> http://localhost:8000, use the 🔴 Live tab
+# --- LIVE: full app incl. the World Cup, Live streaming, betting ---
+python3 ui/live_server.py      # -> http://localhost:8000
 
 # --- REPLAY: compile finished matches into the static site ---
 # 0. the Rust engine builds separately (links the C ABI dylib in build/):

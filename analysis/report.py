@@ -13,8 +13,11 @@ Pure stdlib, no dependencies. Usage:
     python3 analysis/report.py match.jsonl [match2.jsonl ...]
 """
 import json
+import os
 import sys
-from collections import defaultdict
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from metrics import pct, nps_by_move_number  # noqa: E402  (single source of truth)
 
 
 def load(paths):
@@ -28,33 +31,10 @@ def load(paths):
     return rows
 
 
-def pct(sorted_vals, q):
-    if not sorted_vals:
-        return 0.0
-    i = min(len(sorted_vals) - 1, int(q * (len(sorted_vals) - 1) + 0.5))
-    return sorted_vals[i]
-
-
 def bar(value, vmax, width=32):
     if vmax <= 0:
         return ""
     return "#" * max(0, int(round(width * value / vmax)))
-
-
-def nps_by_move_number(rows, engine):
-    """Mean NPS grouped by move number (ply index) for one engine.
-
-    Only moves with a measurable self-reported time contribute (self_ms > 0),
-    since NPS is undefined for sub-millisecond moves.
-    """
-    buckets = defaultdict(list)
-    for r in rows:
-        if r["engine"] != engine or r.get("self_ms", 0) <= 0:
-            continue
-        move_no = r["ply"] // 2 + 1  # full-move number
-        nps = r["self_nodes"] / (r["self_ms"] / 1000.0)
-        buckets[move_no].append(nps)
-    return {k: sum(v) / len(v) for k, v in buckets.items()}, buckets
 
 
 def main():

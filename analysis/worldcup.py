@@ -321,6 +321,265 @@ class WorldCup:
         m = self._find(mid)
         return m.get("game") if m else None
 
+    # ---------- WS3 additive: unified betting model ----------
+    # The 8 distinct engines that back the 48 teams. Odds/contracts/sim all
+    # derive from self.odds(), the single probability model.
+    _MODEL_ENGINES = ["cpp-alphabeta", "rs-alphabeta", "js-alphabeta",
+                      "py-alphabeta", "py-mcts", "random", "cpp-greedy", "py-greedy"]
+
+    def odds_matrix(self):
+        """Pairwise [w,d,l] for every ordered engine pair (static bake + /api/odds)."""
+        out = {}
+        for a in self._MODEL_ENGINES:
+            out[a] = {}
+            for b in self._MODEL_ENGINES:
+                if a == b:
+                    continue
+                out[a][b] = self.odds(a, b)
+        return out
+
+    def odds_detail(self, ea, eb):
+        """odds() plus provenance: {w,d,l,n,source}."""
+        h = self._hist.get((ea, eb), {"w": 0, "d": 0, "l": 0})
+        n = h["w"] + h["d"] + h["l"]
+        w, d, l = self.odds(ea, eb)
+        return {"w": w, "d": d, "l": l, "n": n,
+                "source": "empirical" if n >= 6 else "elo"}
+
+    # --- Monte-Carlo simulation of the rest of the tournament ---
+    def _win_prob(self, ta, tb):
+        """P(team a beats team b) as a single knockout outcome, draw split by seed
+        proxy: use win/(win+loss) normalised, draws resolved to the stronger side."""
+        w, d, l = self.odds(self._team(ta)["engine"], self._team(tb)["engine"])
+        # In knockouts a draw is decided; give the draw mass to the a-vs-b
+        # win/loss split proportionally (a coin weighted by relative strength).
+        denom = w + l
+        base = w / denom if denom > 1e-9 else 0.5
+        return w + d * base
+
+    def simulate(self, n=2000, seed=None):
+        """Monte-Carlo the REST of the tournament using odds() draws only (no engine
+        games). Returns per-team champion probability. Runs in ~ms."""
+        import random
+        rng = random.Random(seed)
+        stage = self.s.get("stage")
+        champ = {t["id"]: 0 for t in self.s["teams"]}
+
+        if stage == "done" and self.s.get("champion") is not None:
+            champ[self.s["champion"]] = n
+            return self._sim_result(champ, n)
+
+        # Build the current knockout bracket as a flat list of remaining slots.
+        # If we are still in the group stage, project group qualification first
+        # via a cheap points Monte-Carlo, then run the knockout.
+        for _ in range(n):
+            if stage == "knockout":
+                bracket = self._current_ko_slots(rng)
+            else:
+                bracket = self._project_group_qualifiers(rng)
+            winner = self._sim_bracket(bracket, rng)
+            if winner is not None:
+                champ[winner] += 1
+        return self._sim_result(champ, n)
+
+    def _sim_result(self, champ, n):
+        rows = []
+        for t in self.s["teams"]:
+            rows.append({"team": t["id"], "country": t.get("country"),
+                         "engine": t["engine"], "name": t.get("name"),
+                         "champion_pct": (champ.get(t["id"], 0) / n) if n else 0.0})
+        rows.sort(key=lambda r: r["champion_pct"], reverse=True)
+        return {"teams": rows, "n": n}
+
+    def _current_ko_slots(self, rng):
+        """Return the remaining-to-play bracket as an ordered list of team ids,
+        collapsing already-played ties to their winners."""
+        ko = self.s.get("knockout", [])
+        if not ko:
+            return []
+        cur = ko[-1]
+        slots = []
+        for t in cur["ties"]:
+            if t.get("played"):
+                slots.append(t["winner"])
+            else:
+                # both sides still alive; simulate this tie during _sim_bracket
+                slots.append(("tie", t["a"], t["b"]))
+        return slots
+
+    def _project_group_qualifiers(self, rng):
+        """Cheap projection: simulate remaining group fixtures, then re-seed a
+        Round-of-32 bracket, returning an ordered list of team ids."""
+        pts = {t["id"]: 0.0 for t in self.s["teams"]}
+        cf = {t["id"]: 0.0 for t in self.s["teams"]}
+        for m in self.s["fixtures"]:
+            a, b = m["a"], m["b"]
+            if m.get("played"):
+                if m["winner"] == a:
+                    pts[a] += 3
+                elif m["winner"] == b:
+                    pts[b] += 3
+                else:
+                    pts[a] += 1; pts[b] += 1
+                cf[a] += m.get("capA", 0) - m.get("capB", 0)
+                cf[b] += m.get("capB", 0) - m.get("capA", 0)
+            else:
+                w, d, l = self.odds(self._team(a)["engine"], self._team(b)["engine"])
+                r = rng.random()
+                if r < w:
+                    pts[a] += 3; cf[a] += 2; cf[b] -= 2
+                elif r < w + d:
+                    pts[a] += 1; pts[b] += 1
+                else:
+                    pts[b] += 3; cf[b] += 2; cf[a] -= 2
+        # rank each group, take top 2 + best 8 thirds
+        winners, runners, thirds = [], [], []
+        for g in range(12):
+            members = self.s["groups"][g]
+            ranked = sorted(members, key=lambda tid: (pts[tid], cf[tid], rng.random()),
+                            reverse=True)
+            winners.append(ranked[0]); runners.append(ranked[1]); thirds.append(ranked[2])
+        thirds.sort(key=lambda tid: (pts[tid], cf[tid]), reverse=True)
+        winners.sort(key=lambda tid: (pts[tid], cf[tid]), reverse=True)
+        runners.sort(key=lambda tid: (pts[tid], cf[tid]), reverse=True)
+        seeded = winners + runners + thirds[:8]
+        order = bracket_positions(32)
+        return [seeded[s - 1] for s in order]
+
+    def _sim_bracket(self, slots, rng):
+        """Play down a bracket (list of ids or ('tie',a,b) tuples) to a champion."""
+        cur = []
+        for s in slots:
+            if isinstance(s, tuple):  # unplayed current tie
+                _, a, b = s
+                cur.append(a if rng.random() < self._win_prob(a, b) else b)
+            else:
+                cur.append(s)
+        while len(cur) > 1:
+            nxt = []
+            for i in range(0, len(cur), 2):
+                a, b = cur[i], cur[i + 1]
+                nxt.append(a if rng.random() < self._win_prob(a, b) else b)
+            cur = nxt
+        return cur[0] if cur else None
+
+    # --- event contracts derived from live tournament state ---
+    def contracts(self):
+        """Derive event contracts from live state. Open contracts carry NO
+        `outcome`; resolved ones do. `p0` is the model opening probability."""
+        out = []
+        sim = self.simulate(n=1500, seed=7)
+        champ_pct = {r["team"]: r["champion_pct"] for r in sim["teams"]}
+        teams = self.s["teams"]
+        by_id = {t["id"]: t for t in teams}
+        stage = self.s.get("stage")
+        champion = self.s.get("champion")
+
+        def lang_of(tid):
+            return self._team(tid)["engine"] and ENGINE_LANG[self._team(tid)["engine"]]
+
+        # --- reachability sets from the current bracket ---
+        alive = None
+        if stage == "knockout":
+            ko = self.s["knockout"]
+            cur = ko[-1]
+            alive = set()
+            for t in cur["ties"]:
+                if t.get("played"):
+                    alive.add(t["winner"])
+                else:
+                    alive.add(t["a"]); alive.add(t["b"])
+
+        # 1) Random finishes bottom (opens high): a random-engine team wins nothing.
+        rand_teams = [t["id"] for t in teams if t["engine"] == "random"]
+        if rand_teams:
+            # P(no random team is champion) ~ 1 - sum(champ pct of random teams)
+            p_rand_champ = sum(champ_pct.get(tid, 0) for tid in rand_teams)
+            p0 = min(0.995, max(0.005, 1 - p_rand_champ))
+            c = {"id": "random-not-champ", "label": "No random-mover team wins the Cup",
+                 "desc": "Resolves YES if no team backed by the random engine lifts the trophy.",
+                 "p0": p0, "status": "open"}
+            if stage == "done":
+                c["status"] = "resolved"
+                c["outcome"] = "NO" if champion in rand_teams else "YES"
+            out.append(c)
+
+        # 2) A Python-language team reaches the Final.
+        py_teams = set(t["id"] for t in teams if ENGINE_LANG[t["engine"]] == "Python")
+        p_py_final = self._prob_reach_final(py_teams, sim)
+        c = {"id": "python-in-final", "label": "A Python-language team reaches the Final",
+             "desc": "Resolves YES if at least one Python-backed team plays in the Final.",
+             "p0": min(0.995, max(0.005, p_py_final)), "status": "open"}
+        finalists = self._finalists()
+        if finalists is not None:
+            c["status"] = "resolved"
+            c["outcome"] = "YES" if (py_teams & set(finalists)) else "NO"
+        out.append(c)
+
+        # 3) The top seed lifts the trophy.
+        seed_of = self.s.get("seed_of")
+        if seed_of:
+            top = min(seed_of, key=lambda k: seed_of[k])
+            p0 = min(0.995, max(0.005, champ_pct.get(top, 0)))
+            c = {"id": "top-seed-champ",
+                 "label": "The top seed lifts the trophy",
+                 "desc": "Resolves YES if the No. 1 knockout seed wins the tournament.",
+                 "p0": p0, "status": "open"}
+            if stage == "done":
+                c["status"] = "resolved"; c["outcome"] = "YES" if champion == top else "NO"
+            out.append(c)
+
+        # 4) An alpha-beta engine wins the Cup ("the language tax is real" flavour).
+        ab_teams = [t["id"] for t in teams if t["engine"].endswith("alphabeta")]
+        p_ab = sum(champ_pct.get(tid, 0) for tid in ab_teams)
+        c = {"id": "alphabeta-champ",
+             "label": "An alpha-beta engine wins the Cup",
+             "desc": "The language tax is real: resolves YES if the champion is an "
+                     "alpha-beta search engine (any language).",
+             "p0": min(0.995, max(0.005, p_ab)), "status": "open"}
+        if stage == "done":
+            c["status"] = "resolved"
+            c["outcome"] = "YES" if (champion in ab_teams) else "NO"
+        out.append(c)
+
+        # 5) The champion is a C++ team (language market).
+        cpp_teams = [t["id"] for t in teams if ENGINE_LANG[t["engine"]] == "C++"]
+        p_cpp = sum(champ_pct.get(tid, 0) for tid in cpp_teams)
+        c = {"id": "cpp-champ", "label": "A C++ team wins the Cup",
+             "desc": "Resolves YES if the champion is backed by a C++ engine.",
+             "p0": min(0.995, max(0.005, p_cpp)), "status": "open"}
+        if stage == "done":
+            c["status"] = "resolved"
+            c["outcome"] = "YES" if (champion in cpp_teams) else "NO"
+        out.append(c)
+
+        return out
+
+    def _finalists(self):
+        """Return [a,b] finalist team ids if the Final tie exists, else None."""
+        for rnd in self.s.get("knockout", []):
+            if rnd["name"] == "Final" and rnd["ties"]:
+                t = rnd["ties"][0]
+                return [t["a"], t["b"]]
+        return None
+
+    def _prob_reach_final(self, team_set, sim):
+        """Estimate P(any team in team_set reaches the Final). Reuses champion sim
+        as a lower-cost proxy: a team reaches the final roughly at 2x its champ
+        odds capped at 1; sum over the set with independence approximation."""
+        if not team_set:
+            return 0.0
+        finalists = self._finalists()
+        if finalists is not None:
+            return 1.0 if (team_set & set(finalists)) else 0.0
+        champ_pct = {r["team"]: r["champion_pct"] for r in sim["teams"]}
+        # P(not in final) product approximation using per-team final odds ~ 2*champ.
+        p_none = 1.0
+        for tid in team_set:
+            p_final = min(0.98, 2.0 * champ_pct.get(tid, 0))
+            p_none *= (1 - p_final)
+        return 1 - p_none
+
     def save(self):
         os.makedirs(os.path.dirname(STATE_FILE), exist_ok=True)
         with open(STATE_FILE, "w") as f:
@@ -355,3 +614,11 @@ if __name__ == "__main__":
     print("played G0M0:", m["result"], m["reason"], "plies", m["plies"],
           "caps", m["capA"], m["capB"], "winner", m["winner"])
     print("odds sample:", wc.odds("cpp-alphabeta", "random"))
+    wc._hist = WorldCup._load_history()
+    sim = wc.simulate(n=200, seed=1)
+    print("sim top:", sim["teams"][0]["country"], round(sim["teams"][0]["champion_pct"], 3),
+          "sum", round(sum(r["champion_pct"] for r in sim["teams"]), 3))
+    cs = wc.contracts()
+    print("contracts:", len(cs), "open-with-outcome:",
+          sum(1 for c in cs if c["status"] == "open" and "outcome" in c))
+    print("matrix pairs:", sum(len(v) for v in wc.odds_matrix().values()))

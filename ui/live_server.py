@@ -108,6 +108,46 @@ def match_running():
     return p is not None and p.poll() is None
 
 
+# ---------------------------------------------------------------------------
+# Route registry. Extension modules can register routes without editing core:
+# they expose module-level GET_ROUTES / POST_ROUTES dicts of {path: fn}.
+#   GET_ROUTES[path]  = fn(handler, query_dict)
+#   POST_ROUTES[path] = fn(handler, body_dict)
+# These are merged and dispatched BEFORE the core handlers below. A route fn
+# should send its own response (e.g. via handler._json(...)).
+# ---------------------------------------------------------------------------
+GET_ROUTES = {}
+POST_ROUTES = {}
+
+
+def register_routes(get_routes=None, post_routes=None):
+    if get_routes:
+        GET_ROUTES.update(get_routes)
+    if post_routes:
+        POST_ROUTES.update(post_routes)
+
+
+def _load_extension_modules():
+    """Import optional ui/api_betting.py and ui/api_analysis.py if present and
+    merge their route dicts. They may not exist yet — import defensively."""
+    import importlib
+    for mod_name in ("api_betting", "api_analysis"):
+        try:
+            sys.path.insert(0, UI_DIR)
+            mod = importlib.import_module(mod_name)
+        except Exception:
+            continue  # module absent or failed to import -> skip
+        register_routes(getattr(mod, "GET_ROUTES", None),
+                        getattr(mod, "POST_ROUTES", None))
+        # allow a module to register imperatively too
+        reg = getattr(mod, "register", None)
+        if callable(reg):
+            try:
+                reg(register_routes)
+            except Exception:
+                pass
+
+
 class Handler(http.server.SimpleHTTPRequestHandler):
     def log_message(self, *a):
         pass
@@ -122,6 +162,15 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_POST(self):
+        parsed = urlparse(self.path)
+        fn = POST_ROUTES.get(parsed.path)
+        if fn is not None:
+            n = int(self.headers.get("Content-Length", 0))
+            try:
+                body = json.loads(self.rfile.read(n) or b"{}")
+            except (ValueError, json.JSONDecodeError):
+                body = {}
+            return fn(self, body)
         if self.path == "/api/start":
             n = int(self.headers.get("Content-Length", 0))
             req = json.loads(self.rfile.read(n) or b"{}")
@@ -164,6 +213,10 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         self.send_error(404)
 
     def do_GET(self):
+        parsed = urlparse(self.path)
+        fn = GET_ROUTES.get(parsed.path)
+        if fn is not None:
+            return fn(self, parse_qs(parsed.query))
         if self.path == "/api/config":
             return self._json({"engines": ENGINE_META, "available": list(ENGINES),
                                "cfg": STATE["cfg"], "running": match_running()})
@@ -274,6 +327,8 @@ def main():
     ap.add_argument("--games", type=int, default=6)
     ap.add_argument("--port", type=int, default=8000)
     args = ap.parse_args()
+
+    _load_extension_modules()
 
     start_match({"engine1": args.engine1, "engine2": args.engine2,
                  "mode": args.mode, "budget": args.budget, "games": args.games})
