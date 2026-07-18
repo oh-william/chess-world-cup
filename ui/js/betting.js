@@ -54,8 +54,22 @@
   }
   const OUTCOME_IDX = { W: 0, D: 1, L: 2 };
   // Cap at 99× so a near-impossible outcome (e.g. a draw between wildly
-  // mismatched teams) reads "99.00" instead of "235608.51", and payouts stay sane.
-  function decimalOdds(p) { return Math.min(99, p > 1e-9 ? 1 / p : 99); }
+  // mismatched teams) reads ">99×" instead of "235608.51", and payouts stay sane.
+  const DEC_CAP = 99;
+  function decimalOdds(p) { return Math.min(DEC_CAP, p > 1e-9 ? 1 / p : DEC_CAP); }
+  // Display form: never show a raw "99.00" at the cap — show a greyed ">99×".
+  // Returns {text, capped}. Set span class "odds-capped" when capped.
+  function decimalDisplay(p) {
+    const raw = p > 1e-9 ? 1 / p : Infinity;
+    if (raw >= DEC_CAP) return { text: ">99×", capped: true };
+    return { text: raw.toFixed(2), capped: false };
+  }
+  // Build a decimal-odds element (tnum, greyed when capped).
+  function decEl(p, extraCls) {
+    const d = decimalDisplay(p);
+    const s = CWC.el("b", "tnum" + (d.capped ? " odds-capped" : "") + (extraCls ? " " + extraCls : ""), d.text);
+    return s;
+  }
 
   /* ---------------- LMSR (client-local price discovery) ---------------- */
   function lmsrPrice(q) {
@@ -80,6 +94,8 @@
   let CONTRACTS = [];         // last /api/contracts payload
   let SIM = null;             // last /api/tournament/simulate payload
   let contractsTimer = null;
+  const LAST_PRICE = {};      // matchId -> [pW,pD,pL] model prices at last render (for ▲▼)
+  let PARLAY = [];            // pending parlay legs [{matchId, outcome, p, label}]
   const teamName = tid => {
     const t = TOURN && TOURN.teams && TOURN.teams[tid];
     return t ? t.country : ("#" + tid);
@@ -96,32 +112,67 @@
 
   /* ---------------- fixture settlement ---------------- */
   // Resolve every OPEN fixture bet whose match is now played.
+  // Actual outcome of a played match from a's perspective: "W"|"D"|"L".
+  function matchOutcome(m) {
+    if (m.winner == null) return "D";
+    return m.winner === m.a ? "W" : "L";
+  }
+
   function settleFixtures(state) {
     if (!state) return;
     const byId = {};
     (state.fixtures || []).forEach(m => { byId[m.id] = m; });
     (state.knockout || []).forEach(r => (r.ties || []).forEach(t => { byId[t.id] = t; }));
     let changed = false;
+    const settledIds = [];
+    const balanceBefore = W.balance;
     W.ledger.forEach(e => {
-      if (e.kind !== "fixture" || e.status !== "open") return;
-      const m = byId[e.ref];
-      if (!m || !m.played) return;
-      // determine actual outcome from a's perspective
-      let actual;
-      if (m.winner == null) actual = "D";
-      else if (m.winner === m.a) actual = "W";
-      else actual = "L";
-      if (e.outcome === actual) {
-        e.status = "won";
-        e.payout = round2(e.stake * e.decimal);
-        W.balance += e.payout;
-      } else {
-        e.status = "lost";
-        e.payout = 0;
+      if (e.status !== "open") return;
+      if (e.kind === "fixture") {
+        const m = byId[e.ref];
+        if (!m || !m.played) return;
+        if (e.outcome === matchOutcome(m)) {
+          e.status = "won"; e.payout = round2(e.stake * e.decimal); W.balance += e.payout;
+        } else { e.status = "lost"; e.payout = 0; }
+        settledIds.push(e.id); changed = true;
+      } else if (e.kind === "parlay") {
+        // All-or-nothing: resolve only when EVERY leg's match is played.
+        const legs = e.legs || [];
+        const ms = legs.map(l => byId[l.ref]);
+        if (ms.some(m => !m || !m.played)) return; // wait for all
+        const allHit = legs.every((l, i) => l.outcome === matchOutcome(ms[i]));
+        if (allHit) {
+          e.status = "won"; e.payout = round2(e.stake * e.decimal); W.balance += e.payout;
+        } else { e.status = "lost"; e.payout = 0; }
+        settledIds.push(e.id); changed = true;
       }
-      changed = true;
     });
-    if (changed) { saveWallet(); renderIfActive(); }
+    if (changed) {
+      saveWallet();
+      renderIfActive();
+      // settle animation: flash rows, count the wallet up/down.
+      flashSettled(settledIds);
+      animateWallet(balanceBefore, W.balance);
+    }
+  }
+
+  // Flash newly-settled ledger rows green/red after the next render.
+  function flashSettled(ids) {
+    if (!ids || !ids.length) return;
+    requestAnimationFrame(() => {
+      ids.forEach(id => {
+        const row = document.querySelector('tr[data-lid="' + id + '"]');
+        if (!row) return;
+        const cls = row.classList.contains("st-won") ? "flash-win"
+          : row.classList.contains("st-lost") ? "flash-loss" : null;
+        if (cls) CWC.anim.flash(row, cls, 900);
+      });
+    });
+  }
+  // Count the header wallet balance up/down on settlement.
+  function animateWallet(from, to) {
+    const balEl = document.querySelector("#wallet-chip .wc-bal");
+    if (balEl) CWC.anim.countUp(balEl, from, to, { fmt: v => money2(v), ms: 700 });
   }
 
   /* ---------------- contract settlement (from poll) ---------------- */
@@ -160,6 +211,8 @@
       if (e.status !== "open") return;
       if (e.kind === "fixture") {
         mark += e.stake * e.decimal * e.p; // EV of the open bet
+      } else if (e.kind === "parlay") {
+        mark += e.stake * e.decimal * e.p; // EV = payout * P(all legs hit)
       } else if (e.kind === "contract") {
         const q = W.lmsr.q[e.ref];
         const price = q ? (e.side === "YES" ? lmsrPrice(q) : 1 - lmsrPrice(q)) : e.p;
@@ -185,82 +238,161 @@
     host.appendChild(chip);
   }
 
-  /* ---------------- bet slip (fixture) ---------------- */
-  let SLIP = null;
+  /* ---------------- bet slip drawer (fixture) ---------------- */
+  // A persistent right-side drawer. openSlip() loads a fixture leg into it and
+  // opens it. It also hosts the parlay builder (multiple legs → combined decimal).
+  let SLIP = null; // {match, outcome, p, stake}
+
+  function ensureDrawer() {
+    let dr = document.getElementById("bet-drawer");
+    if (dr) return dr;
+    dr = CWC.el("aside", "bet-drawer");
+    dr.id = "bet-drawer";
+    dr.setAttribute("role", "dialog");
+    dr.setAttribute("aria-label", "Bet slip");
+    dr.setAttribute("aria-hidden", "true");
+    const scrim = CWC.el("div", "bet-drawer-scrim");
+    scrim.addEventListener("click", closeSlip);
+    document.body.appendChild(scrim);
+    document.body.appendChild(dr);
+    dr._scrim = scrim;
+    document.addEventListener("keydown", e => {
+      if (e.key === "Escape" && dr.classList.contains("is-open")) closeSlip();
+    });
+    return dr;
+  }
+
+  function openDrawer() {
+    const dr = ensureDrawer();
+    dr.classList.add("is-open");
+    dr.setAttribute("aria-hidden", "false");
+    dr._scrim.classList.add("is-open");
+    renderDrawer();
+  }
+  function closeSlip() {
+    const dr = document.getElementById("bet-drawer");
+    if (dr) { dr.classList.remove("is-open"); dr.setAttribute("aria-hidden", "true");
+      if (dr._scrim) dr._scrim.classList.remove("is-open"); }
+    SLIP = null;
+  }
+
   function openSlip(match, outcome) {
     if (!CWC.state.live) { CWC.ui.toast("Betting is live-only. Run the live server.", "err"); return; }
     outcome = OUTCOME_IDX[outcome] != null ? outcome : "W";
     const odds = oddsFor(match);
     const p = odds[OUTCOME_IDX[outcome]];
-    closeSlip();
-    const dlg = document.createElement("dialog");
-    dlg.className = "bet-slip";
-    SLIP = { dlg, match, outcome, p, stake: STAKES[1] };
+    SLIP = { match, outcome, p, stake: STAKES[1] };
+    openDrawer();
+  }
+
+  function outcomeLabel(match, outcome) {
+    return outcome === "W" ? (teamName(match.a) + " to win")
+      : outcome === "L" ? (teamName(match.b) + " to win") : "Draw";
+  }
+
+  function renderDrawer() {
+    const dr = document.getElementById("bet-drawer");
+    if (!dr) return;
+    dr.innerHTML = "";
 
     const head = CWC.el("div", "slip-head");
     head.innerHTML = "<strong>Bet slip</strong>";
     const x = CWC.el("button", "icon-btn"); x.type = "button";
-    x.innerHTML = CWC.icon("close"); x.setAttribute("aria-label", "Close");
+    x.innerHTML = CWC.icon("close"); x.setAttribute("aria-label", "Close bet slip");
     x.addEventListener("click", closeSlip);
     head.appendChild(x);
-    dlg.appendChild(head);
+    dr.appendChild(head);
 
-    const lbl = outcome === "W" ? (teamName(match.a) + " to win")
-      : outcome === "L" ? (teamName(match.b) + " to win") : "Draw";
+    dr.appendChild(singleSlipSection());
+    dr.appendChild(parlaySection());
+  }
+
+  // ---- single bet section ----
+  function singleSlipSection() {
+    const sec = CWC.el("div", "slip-section");
+    sec.appendChild(CWC.el("div", "slip-section-title", "Single bet"));
+    if (!SLIP) {
+      sec.appendChild(CWC.el("p", "muted", "Pick an outcome in the fixture book to load a single bet."));
+      return sec;
+    }
+    const m = SLIP.match, p = SLIP.p;
+
     const sub = CWC.el("div", "slip-sub");
-    sub.innerHTML = "<span>" + CWC.esc(teamName(match.a)) + " vs " +
-      CWC.esc(teamName(match.b)) + "</span><span class=\"slip-pick\">" +
-      CWC.esc(lbl) + "</span>";
-    dlg.appendChild(sub);
+    sub.innerHTML = "<span>" + CWC.esc(teamName(m.a)) + " vs " +
+      CWC.esc(teamName(m.b)) + "</span>";
+    const pick = CWC.el("span", "slip-pick", outcomeLabel(m, SLIP.outcome));
+    sub.appendChild(pick);
+    sec.appendChild(sub);
 
     const meta = CWC.el("div", "slip-meta");
-    meta.innerHTML = "Model prob <b>" + (p * 100).toFixed(1) + "%</b> · decimal <b>" +
-      decimalOdds(p).toFixed(2) + "</b> (no vig)";
-    dlg.appendChild(meta);
+    meta.appendChild(document.createTextNode("Model prob "));
+    meta.appendChild(CWC.el("b", "tnum", (p * 100).toFixed(1) + "%"));
+    meta.appendChild(document.createTextNode(" · decimal "));
+    meta.appendChild(decEl(p));
+    meta.appendChild(document.createTextNode(" (no vig)"));
+    sec.appendChild(meta);
 
-    // stake chips
+    // stake presets + custom
     const chips = CWC.el("div", "stake-chips");
     STAKES.forEach(s => {
       const b = CWC.el("button", "stake-chip", "$" + s); b.type = "button";
-      b.addEventListener("click", () => { SLIP.stake = s; syncSlip(); });
+      b.addEventListener("click", () => { SLIP.stake = s; renderDrawer(); });
       chips.appendChild(b);
     });
     const custom = CWC.el("input", "stake-custom");
     custom.type = "number"; custom.min = "1"; custom.placeholder = "custom";
+    if (STAKES.indexOf(SLIP.stake) < 0) custom.value = String(SLIP.stake);
     custom.addEventListener("input", () => {
-      const v = Number(custom.value); if (v > 0) { SLIP.stake = v; syncSlip(true); }
+      const v = Number(custom.value); if (v > 0) { SLIP.stake = v; syncSingle(sec); }
     });
     chips.appendChild(custom);
-    dlg.appendChild(chips);
+    sec.appendChild(chips);
 
-    const ret = CWC.el("div", "slip-return");
-    dlg.appendChild(ret);
-    SLIP.retEl = ret; SLIP.chipsEl = chips;
+    // readouts: payout / to win / balance after
+    const reads = CWC.el("div", "slip-reads");
+    reads.innerHTML =
+      '<div class="slip-read"><span>Payout</span><b class="tnum" data-r="payout"></b></div>' +
+      '<div class="slip-read"><span>To win</span><b class="tnum" data-r="towin"></b></div>' +
+      '<div class="slip-read"><span>Balance after</span><b class="tnum" data-r="after"></b></div>';
+    sec.appendChild(reads);
+
+    const addP = CWC.el("button", "btn btn--accent-ghost slip-addparlay", "+ Add to parlay");
+    addP.type = "button";
+    addP.addEventListener("click", () => {
+      addParlayLeg(m, SLIP.outcome, SLIP.p);
+      renderDrawer();
+    });
+    sec.appendChild(addP);
 
     const place = CWC.el("button", "btn btn--primary slip-place");
     place.type = "button";
     place.addEventListener("click", placeSlip);
-    SLIP.placeEl = place;
-    dlg.appendChild(place);
+    sec.appendChild(place);
 
-    document.body.appendChild(dlg);
-    dlg.addEventListener("cancel", closeSlip);
-    if (dlg.showModal) dlg.showModal(); else dlg.setAttribute("open", "");
-    syncSlip();
+    // mark chips + fill readouts
+    syncSingle(sec);
+    return sec;
   }
-  function syncSlip() {
+
+  function syncSingle(sec) {
     if (!SLIP) return;
-    const retn = SLIP.stake * decimalOdds(SLIP.p);
-    SLIP.retEl.innerHTML = "Stake <b>" + money2(SLIP.stake) + "</b> → returns <b>" +
-      money2(retn) + "</b>";
-    SLIP.chipsEl.querySelectorAll(".stake-chip").forEach(c => {
+    const dec = decimalOdds(SLIP.p);
+    const payout = SLIP.stake * dec;
+    const towin = payout - SLIP.stake;
+    const after = W.balance - SLIP.stake;
+    const set = (k, v) => { const e = sec.querySelector('[data-r="' + k + '"]'); if (e) e.textContent = money2(v); };
+    set("payout", payout); set("towin", towin); set("after", after);
+    sec.querySelectorAll(".stake-chip").forEach(c => {
       c.classList.toggle("is-on", c.textContent === "$" + SLIP.stake);
     });
+    const place = sec.querySelector(".slip-place");
     const afford = SLIP.stake <= W.balance && SLIP.stake > 0;
-    SLIP.placeEl.disabled = !afford;
-    SLIP.placeEl.textContent = afford ? ("Place " + money2(SLIP.stake))
-      : "Insufficient balance";
+    if (place) {
+      place.disabled = !afford;
+      place.textContent = afford ? ("Place " + money2(SLIP.stake)) : "Insufficient balance";
+    }
   }
+
   function placeSlip() {
     if (!SLIP || SLIP.stake <= 0 || SLIP.stake > W.balance) return;
     const m = SLIP.match;
@@ -273,12 +405,128 @@
     });
     saveWallet();
     CWC.ui.toast("Bet placed: " + money2(SLIP.stake) + " on " + SLIP.outcome, "ok");
-    closeSlip();
+    SLIP = null;
+    renderDrawer();
     renderIfActive();
   }
-  function closeSlip() {
-    if (SLIP && SLIP.dlg) { try { SLIP.dlg.close(); } catch (e) {} SLIP.dlg.remove(); }
-    SLIP = null;
+
+  // ---- parlay builder ----
+  function addParlayLeg(match, outcome, p) {
+    // one leg per fixture — replace if the fixture is already in the slip
+    PARLAY = PARLAY.filter(l => l.matchId !== match.id);
+    PARLAY.push({ matchId: match.id, outcome, p,
+      label: teamName(match.a) + " v " + teamName(match.b),
+      pick: outcomeLabel(match, outcome) });
+    CWC.ui.toast("Added to parlay (" + PARLAY.length + " legs)", "ok");
+  }
+  function parlayDecimal() {
+    // combined decimal = product of legs' decimals (client combinatorics).
+    return PARLAY.reduce((acc, l) => acc * decimalOdds(l.p), 1);
+  }
+  function parlayProb() { return PARLAY.reduce((acc, l) => acc * l.p, 1); }
+
+  const PARLAY_STATE = { stake: STAKES[1] };
+  function parlaySection() {
+    const sec = CWC.el("div", "slip-section");
+    const title = CWC.el("div", "slip-section-title", "Parlay");
+    if (PARLAY.length) {
+      const clr = CWC.el("button", "icon-btn slip-clear", "clear"); clr.type = "button";
+      clr.addEventListener("click", () => { PARLAY = []; renderDrawer(); });
+      title.appendChild(clr);
+    }
+    sec.appendChild(title);
+    if (!PARLAY.length) {
+      sec.appendChild(CWC.el("p", "muted", "Add legs from any fixtures to build an all-or-nothing parlay."));
+      return sec;
+    }
+    const legs = CWC.el("div", "parlay-legs");
+    PARLAY.forEach(l => {
+      const leg = CWC.el("div", "parlay-leg");
+      const info = CWC.el("span", "parlay-leg-info");
+      info.innerHTML = "<b>" + CWC.esc(l.pick) + "</b><span class=\"muted\">" +
+        CWC.esc(l.label) + "</span>";
+      leg.appendChild(info);
+      leg.appendChild(decEl(l.p, "parlay-leg-odds"));
+      const rm = CWC.el("button", "icon-btn"); rm.type = "button";
+      rm.innerHTML = CWC.icon("close"); rm.setAttribute("aria-label", "Remove leg");
+      rm.addEventListener("click", () => { PARLAY = PARLAY.filter(x => x !== l); renderDrawer(); });
+      leg.appendChild(rm);
+      legs.appendChild(leg);
+    });
+    sec.appendChild(legs);
+
+    const combo = CWC.el("div", "parlay-combo");
+    combo.appendChild(document.createTextNode(PARLAY.length + " legs · combined "));
+    combo.appendChild(decEl(parlayProb()));
+    sec.appendChild(combo);
+
+    // stake presets
+    const chips = CWC.el("div", "stake-chips");
+    STAKES.forEach(s => {
+      const b = CWC.el("button", "stake-chip", "$" + s); b.type = "button";
+      b.addEventListener("click", () => { PARLAY_STATE.stake = s; renderDrawer(); });
+      chips.appendChild(b);
+    });
+    const custom = CWC.el("input", "stake-custom");
+    custom.type = "number"; custom.min = "1"; custom.placeholder = "custom";
+    if (STAKES.indexOf(PARLAY_STATE.stake) < 0) custom.value = String(PARLAY_STATE.stake);
+    custom.addEventListener("input", () => {
+      const v = Number(custom.value); if (v > 0) { PARLAY_STATE.stake = v; syncParlay(sec); }
+    });
+    chips.appendChild(custom);
+    sec.appendChild(chips);
+
+    const reads = CWC.el("div", "slip-reads");
+    reads.innerHTML =
+      '<div class="slip-read"><span>Payout</span><b class="tnum" data-r="ppayout"></b></div>' +
+      '<div class="slip-read"><span>To win</span><b class="tnum" data-r="ptowin"></b></div>' +
+      '<div class="slip-read"><span>Balance after</span><b class="tnum" data-r="pafter"></b></div>';
+    sec.appendChild(reads);
+
+    const place = CWC.el("button", "btn btn--primary slip-place");
+    place.type = "button";
+    place.addEventListener("click", placeParlay);
+    sec.appendChild(place);
+    sec._place = place;
+
+    syncParlay(sec);
+    return sec;
+  }
+
+  function syncParlay(sec) {
+    const dec = parlayDecimal();
+    const stake = PARLAY_STATE.stake;
+    const payout = stake * dec;
+    const set = (k, v) => { const e = sec.querySelector('[data-r="' + k + '"]'); if (e) e.textContent = money2(v); };
+    set("ppayout", payout); set("ptowin", payout - stake); set("pafter", W.balance - stake);
+    sec.querySelectorAll(".stake-chip").forEach(c => {
+      c.classList.toggle("is-on", c.textContent === "$" + stake);
+    });
+    const place = sec.querySelector(".slip-place");
+    const afford = stake <= W.balance && stake > 0 && PARLAY.length >= 2;
+    if (place) {
+      place.disabled = !afford;
+      place.textContent = PARLAY.length < 2 ? "Add 2+ legs"
+        : (afford ? ("Place parlay " + money2(stake)) : "Insufficient balance");
+    }
+  }
+
+  function placeParlay() {
+    const stake = PARLAY_STATE.stake;
+    if (PARLAY.length < 2 || stake <= 0 || stake > W.balance) return;
+    W.balance -= stake;
+    W.ledger.unshift({
+      id: nextId(), ts: Date.now(), kind: "parlay",
+      legs: PARLAY.map(l => ({ ref: l.matchId, outcome: l.outcome, p: l.p, label: l.label, pick: l.pick })),
+      stake: round2(stake), p: parlayProb(), decimal: parlayDecimal(),
+      status: "open", payout: 0,
+      label: PARLAY.length + "-leg parlay"
+    });
+    saveWallet();
+    CWC.ui.toast("Parlay placed: " + money2(stake) + " · " + PARLAY.length + " legs", "ok");
+    PARLAY = [];
+    renderDrawer();
+    renderIfActive();
   }
 
   /* ---------------- contract trading (client-local) ---------------- */
@@ -301,6 +549,29 @@
     });
     saveWallet();
     CWC.ui.toast("Bought " + LOT + " " + side + " @ " + Math.round(price * 100) + "¢", "ok");
+    renderIfActive();
+  }
+
+  // Cash out an OPEN contract position by selling its shares back into the LMSR
+  // at the current price. Only LMSR contracts are sellable — fixed-odds fixtures
+  // are NOT (there is no live counterparty; cashing out would be fake).
+  function cashOutContract(entry) {
+    if (entry.kind !== "contract" || entry.status !== "open") return;
+    const q = W.lmsr.q[entry.ref];
+    if (!q) { CWC.ui.toast("No open market for this position.", "err"); return; }
+    const isYes = entry.side === "YES";
+    // selling `shares` of the held side: revert the quantity and refund the
+    // cost delta the AMM returns.
+    const before = lmsrCost(q);
+    const nq = { yes: q.yes - (isYes ? entry.shares : 0), no: q.no - (isYes ? 0 : entry.shares) };
+    const refund = round2(before - lmsrCost(nq)); // $ returned for selling the lot
+    W.lmsr.q[entry.ref] = nq;
+    (W.lmsr.hist[entry.ref] || (W.lmsr.hist[entry.ref] = [])).push(lmsrPrice(nq));
+    W.balance += Math.max(0, refund);
+    entry.status = "cashed";
+    entry.payout = Math.max(0, refund);
+    saveWallet();
+    CWC.ui.toast("Cashed out " + entry.shares + " " + entry.side + " for " + money2(entry.payout), "ok");
     renderIfActive();
   }
 
@@ -333,6 +604,7 @@
     grid.appendChild(contractPanel());
     grid.appendChild(titlePanel());
     ROOT.appendChild(grid);
+    ROOT.appendChild(positionsPanel());
     ROOT.appendChild(ledgerPanel());
   }
 
@@ -375,7 +647,9 @@
 
   function fixtureRow(m) {
     const odds = oddsFor(m);
+    const prev = LAST_PRICE[m.id];
     const row = CWC.el("div", "fx-row");
+    row.dataset.fxid = m.id;
     const info = CWC.el("div", "fx-info");
     const a = CWC.el("span", "fx-team");
     a.appendChild(langDot(teamLang(m.a)));
@@ -402,14 +676,32 @@
 
     const btns = CWC.el("div", "fx-btns");
     [["W", teamName(m.a)], ["D", "Draw"], ["L", teamName(m.b)]].forEach(([o, lab]) => {
+      const idx = OUTCOME_IDX[o];
+      const p = odds[idx];
       const btn = CWC.el("button", "bet-btn");
       btn.type = "button";
-      btn.innerHTML = "<span>" + CWC.esc(lab) + "</span><b>" +
-        decimalOdds(odds[OUTCOME_IDX[o]]).toFixed(2) + "</b>";
+      btn.dataset.o = o;
+      const span = CWC.el("span", null, lab);
+      btn.appendChild(span);
+      // movement arrow vs the previously-rendered model price for this outcome.
+      if (prev && Math.abs(prev[idx] - p) > 1e-4) {
+        const up = p > prev[idx]; // higher prob → shorter (lower) odds; arrow reflects prob move
+        const arr = CWC.el("span", "odds-move " + (up ? "is-up" : "is-down"), up ? "▲" : "▼");
+        arr.setAttribute("aria-label", up ? "shortening" : "drifting");
+        btn.appendChild(arr);
+      }
+      const db = decEl(p);
+      btn.appendChild(db);
+      if (prev && Math.abs(prev[idx] - p) > 1e-4) {
+        const up = p > prev[idx];
+        CWC.anim.flash(db, up ? "flash-up" : "flash-down", 900);
+      }
       btn.addEventListener("click", () => openSlip(m, o));
       btns.appendChild(btn);
     });
     row.appendChild(btns);
+    // remember this render's model prices for the next ▲▼ comparison.
+    LAST_PRICE[m.id] = odds.slice();
     return row;
   }
 
@@ -498,6 +790,74 @@
     return "none";
   }
 
+  /* --- my positions (open exposure, mark-to-model P&L) --- */
+  function positionMark(e) {
+    // current mark value of one open position (what it's worth now).
+    if (e.kind === "fixture" || e.kind === "parlay") return e.stake * e.decimal * e.p;
+    if (e.kind === "contract") {
+      const q = W.lmsr.q[e.ref];
+      const price = q ? (e.side === "YES" ? lmsrPrice(q) : 1 - lmsrPrice(q)) : e.p;
+      return e.shares * price;
+    }
+    return 0;
+  }
+
+  function positionsPanel() {
+    const p = panel("My positions");
+    const open = W.ledger.filter(e => e.status === "open");
+    if (!open.length) {
+      p.appendChild(CWC.el("p", "muted", "No open positions. Place a fixture bet, parlay, or contract to build exposure."));
+      return p;
+    }
+    const list = CWC.el("div", "pos-list");
+    open.forEach(e => list.appendChild(positionRow(e)));
+    p.appendChild(list);
+    p.appendChild(CWC.el("p", "muted", "P&L marked to the model. Cash-out is only offered on LMSR contracts (sellable at the current price); fixed-odds fixtures & parlays settle at match time."));
+    return p;
+  }
+
+  function positionRow(e) {
+    const row = CWC.el("div", "pos-row pos-" + e.kind);
+    const head = CWC.el("div", "pos-head");
+    const kindLbl = e.kind === "fixture" ? "Fixture" : e.kind === "parlay" ? "Parlay" : "Contract";
+    head.appendChild(CWC.el("span", "pos-kind chip", kindLbl));
+    const side = e.kind === "contract" ? e.side : e.kind === "fixture" ? e.outcome : (e.legs.length + " legs");
+    head.appendChild(CWC.el("span", "pos-label", (e.label || e.ref) + " · " + side));
+    row.appendChild(head);
+
+    if (e.kind === "parlay") {
+      const legs = CWC.el("div", "pos-legs muted");
+      legs.textContent = e.legs.map(l => l.pick).join("  +  ");
+      row.appendChild(legs);
+    }
+
+    const mark = positionMark(e);
+    const pnl = mark - e.stake;
+    const stats = CWC.el("div", "pos-stats");
+    const stat = (k, v, cls) => {
+      const s = CWC.el("span", "pos-stat");
+      s.appendChild(CWC.el("span", "pos-stat-k", k));
+      s.appendChild(CWC.el("span", "pos-stat-v tnum" + (cls ? " " + cls : ""), v));
+      return s;
+    };
+    stats.appendChild(stat("stake", money2(e.stake)));
+    stats.appendChild(stat("mark", money2(mark)));
+    stats.appendChild(stat("P&L", (pnl >= 0 ? "+" : "") + money2(pnl),
+      pnl > 0.005 ? "pnl-up" : pnl < -0.005 ? "pnl-down" : "pnl-flat"));
+    row.appendChild(stats);
+
+    if (e.kind === "contract") {
+      const co = CWC.el("button", "btn btn--sm btn--accent-ghost pos-cashout", "Cash out " + money2(mark));
+      co.type = "button";
+      co.addEventListener("click", () => cashOutContract(e));
+      row.appendChild(co);
+    } else {
+      const note = CWC.el("div", "pos-note muted", "settles at match time — no cash-out on fixed odds");
+      row.appendChild(note);
+    }
+    return row;
+  }
+
   /* --- ledger --- */
   function ledgerPanel() {
     const reset = CWC.el("button", "btn btn--ghost", "Reset wallet");
@@ -519,9 +879,11 @@
     const tb = CWC.el("tbody");
     W.ledger.forEach(e => {
       const tr = CWC.el("tr", "st-" + e.status);
-      const side = e.kind === "fixture" ? e.outcome : e.side;
-      const price = e.kind === "fixture"
-        ? (e.decimal ? e.decimal.toFixed(2) : "-")
+      tr.dataset.lid = e.id;
+      const side = e.kind === "fixture" ? e.outcome
+        : e.kind === "parlay" ? (e.legs.length + " legs") : e.side;
+      const price = (e.kind === "fixture" || e.kind === "parlay")
+        ? (e.decimal ? decimalDisplay(e.p).text : "-")
         : (Math.round((e.p || 0) * 100) + "¢");
       [
         new Date(e.ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
@@ -532,7 +894,11 @@
         e.status,
         e.status === "open" ? "—" : money2(e.payout)
       ].forEach((v, i) => {
-        const td = CWC.el("td", i === 5 ? "st-cell" : null, v);
+        let cls = null;
+        if (i === 5) cls = "st-cell";
+        else if (i === 3 || i === 6) cls = "tnum";
+        else if (i === 4) cls = "tnum" + (price === ">99×" ? " odds-capped" : "");
+        const td = CWC.el("td", cls, v);
         tr.appendChild(td);
       });
       tb.appendChild(tr);

@@ -22,7 +22,9 @@
       positions: [START_FEN], moves: [], // moves: [{uci, fen, engine, color, orch_ms, delta_ms, self_nodes, self_ms}]
       i: 0, playing: null, speed: 1,
       white: null, black: null, whiteCountry: null, blackCountry: null,
+      whiteRating: null, blackRating: null, whiteForm: null, blackForm: null,
       result: null, reason: null, plies: 0,
+      taxNote: null,
       wcId: null, title: null,
     },
     // live state
@@ -36,17 +38,46 @@
 
   /* ================= shared plate / material ================= */
 
-  function plateHTML(name, country, side, lang) {
+  // form dots: last-5 results for this player, newest last.
+  // results: array of "w" | "l" | "d" (string codes), most-recent-last.
+  function formDotsHTML(results) {
+    if (!results || !results.length) return "";
+    const last5 = results.slice(-5);
+    let out = '<span class="pl-form" role="img" aria-label="recent form">';
+    last5.forEach(r => {
+      const cls = r === "w" ? "is-win" : r === "l" ? "is-loss" : "is-draw";
+      out += '<span class="form-dot ' + cls + '" title="' +
+        (r === "w" ? "win" : r === "l" ? "loss" : "draw") + '"></span>';
+    });
+    return out + "</span>";
+  }
+
+  // opts: {country, lang, rating, form:[...]}
+  function plateHTML(name, country, side, opts) {
+    opts = opts || {};
     if (!name) {
-      return '<span class="pl-flag">🏳</span><span class="pl-name">—</span>' +
+      return '<span class="pl-flag" aria-hidden="true">' + esc(CWC.flag(null)) +
+        '</span><span class="pl-name">—</span>' +
         '<span class="pl-side">' + esc(side) + "</span>";
     }
-    const e = country ? { country, lang } : CWC.engineOf(name);
-    const key = CWC.langKey(e.lang || lang);
-    return '<span class="pl-flag" aria-hidden="true">' + esc(CWC.flag(e.country || country)) + "</span>" +
-      '<span class="chip chip--lang pl-lang" data-lang="' + esc(key) + '">' + esc(e.lang || lang || "?") + "</span>" +
-      '<span class="pl-name">' + esc(name) + "</span>" +
-      '<span class="pl-side">' + esc(side) + "</span>";
+    // Resolve engine metadata from the shared registry, then let per-game
+    // overrides (opts) win. NEVER emit a literal "(?)" placeholder.
+    const e = CWC.engineOf(name) || {};
+    const lang = opts.lang || e.lang;
+    const cc = country || opts.country || e.country;
+    const rating = opts.rating != null ? opts.rating : e.rating;
+    const key = CWC.langKey(lang);
+    const langLabel = lang && lang !== "?" ? lang : CWC.langKey(lang).toUpperCase();
+    let html = '<span class="pl-flag" aria-hidden="true">' + esc(CWC.flag(cc)) + "</span>";
+    html += '<span class="chip chip--lang pl-lang" data-lang="' + esc(key) + '">' +
+      esc(langLabel) + "</span>";
+    html += '<span class="pl-name">' + esc(name) + "</span>";
+    if (rating != null && rating !== "") {
+      html += '<span class="pl-rating tnum" title="chess rating">' + esc(rating) + "</span>";
+    }
+    html += '<span class="pl-side">' + esc(side) + "</span>";
+    html += formDotsHTML(opts.form);
+    return html;
   }
 
   // captured-material readout for a color, from a FEN, relative to start.
@@ -68,6 +99,46 @@
       (dtxt ? '<span class="mat-diff mono">' + esc(dtxt) + "</span>" : "");
   }
 
+  // Vertical eval bar driven purely by material diff (always populated). White
+  // advantage grows the white portion upward; label shows signed pawns.
+  function renderEval(fen) {
+    if (!W.dom || !W.dom.evalWhite) return;
+    const m = CWC.board.material(fen);
+    const diff = m.diff; // + = white ahead, in pawns
+    // map material diff to a 0..100% white share via a soft clamp (±10 pawns).
+    const clamped = Math.max(-10, Math.min(10, diff));
+    const whitePct = 50 + (clamped / 10) * 50;
+    W.dom.evalWhite.style.height = whitePct.toFixed(1) + "%";
+    const txt = diff > 0 ? "+" + diff : diff < 0 ? String(diff) : "0";
+    W.dom.evalLabel.textContent = txt;
+    W.dom.evalBar.setAttribute("aria-label",
+      "material evaluation: " + (diff === 0 ? "even" :
+        (diff > 0 ? "white +" + diff : "black +" + (-diff))));
+    W.dom.evalBar.classList.toggle("is-black-ahead", diff < 0);
+  }
+
+  // Last-5 form for an engine across an event's games (chronological), newest last.
+  function eventForm(ev, engineName) {
+    if (!ev || !ev.games || !engineName) return [];
+    const out = [];
+    ev.games.forEach(g => {
+      let side = null;
+      if (g.white === engineName) side = "w";
+      else if (g.black === engineName) side = "b";
+      if (!side) return;
+      if (g.result === "1/2-1/2") out.push("d");
+      else if (g.result === "1-0") out.push(side === "w" ? "w" : "l");
+      else if (g.result === "0-1") out.push(side === "b" ? "w" : "l");
+    });
+    return out;
+  }
+
+  // rating for an engine from the shared engine registry (may be undefined).
+  function engineRating(name) {
+    const e = CWC.engineOf(name);
+    return e && e.rating != null ? e.rating : null;
+  }
+
   /* ================= shared movelist + tax + telemetry ================= */
 
   // moves: array of {uci, fen?, engine?, color?, orch_ms?, delta_ms?, self_nodes?, self_ms?}
@@ -79,7 +150,13 @@
       const beforeFen = positions[idx] || START_FEN;
       const san = CWC.san(beforeFen, m.uci);
       if (idx % 2 === 0) host.appendChild(el("span", "ml-num mono", (idx / 2 + 1) + "."));
-      const s = el("span", "ml-mv" + (idx === cur - 1 ? " is-cur" : ""), san);
+      const s = el("span", "ml-mv" + (idx === cur - 1 ? " is-cur" : ""));
+      s.appendChild(el("span", "ml-san", san));
+      // inline per-move nodes / ms telemetry, when present
+      const bits = [];
+      if (m.self_nodes != null) bits.push(CWC.fmt.nps(m.self_nodes).replace(/(\d)([kM])/, "$1$2") + "n");
+      if (m.orch_ms != null) bits.push(m.orch_ms + "ms");
+      if (bits.length) s.appendChild(el("span", "ml-tele tnum", bits.join(" ")));
       s.tabIndex = 0;
       s.setAttribute("role", "button");
       if (onSeek) {
@@ -93,14 +170,103 @@
     if (curEl && curEl.scrollIntoView) curEl.scrollIntoView({ block: "nearest" });
   }
 
-  function renderTax(fillEl, valEl, cumDelta, cumOrch) {
+  // Sparkline of per-move nodes (or ms) across the game, via CWC.charts.spark.
+  function renderMoveSpark(host, moves, cur) {
+    if (!host) return;
+    host.innerHTML = "";
+    const nodeVals = moves.map(m => m.self_nodes).filter(v => v != null);
+    const msVals = moves.map(m => m.orch_ms).filter(v => v != null);
+    const which = nodeVals.length >= 2 ? { vals: nodeVals, label: "nodes/move" }
+      : msVals.length >= 2 ? { vals: msVals, label: "ms/move" } : null;
+    if (!which) { host.classList.add("is-hidden"); return; }
+    host.classList.remove("is-hidden");
+    const cap = el("span", "w-ml-spark-cap", which.label);
+    host.appendChild(cap);
+    const sh = el("div", "w-ml-spark-svg");
+    host.appendChild(sh);
+    CWC.charts.spark(sh, { values: which.vals, w: 200, h: 24, color: "--accent" });
+  }
+
+  // Cumulative per-move tax meter (game HAS telemetry). Always shows the track,
+  // even at 0% (ply 0), so it's never a "dead" empty bar — it fills as you step.
+  function renderTaxCumulative(card, cumDelta, cumOrch) {
+    if (!card) return;
+    const track = card.querySelector(".w-tax-track");
+    const fill = card.querySelector(".w-tax-fill");
+    const val = card.querySelector(".w-tax-value");
+    const agg = card.querySelector(".w-tax-agg");
+    if (track) track.classList.remove("is-hidden");
+    if (agg) agg.classList.add("is-hidden");
     const pct = cumOrch > 0 ? (cumDelta / cumOrch) * 100 : 0;
-    fillEl.style.width = Math.min(100, pct) + "%";
-    if (cumOrch > 0) {
-      valEl.textContent = cumDelta + " ms tax over " + cumOrch + " ms wall (" + pct.toFixed(1) + "%)";
-    } else {
-      valEl.textContent = "no implementation-tax telemetry for this game";
+    if (fill) fill.style.width = Math.min(100, pct) + "%";
+    if (val) {
+      val.textContent = cumOrch > 0
+        ? cumDelta + " ms tax over " + cumOrch + " ms wall (" + pct.toFixed(1) + "%)"
+        : "step through moves to accrue implementation tax";
     }
+  }
+
+  // renderTax: when per-move telemetry is present (cumOrch>0) show the cumulative
+  // meter. Otherwise, if an aggregate note is available, show it (never an empty
+  // track); if nothing at all, hide the track and say so.
+  function renderTax(card, cumDelta, cumOrch, aggNote) {
+    if (!card) return;
+    const track = card.querySelector(".w-tax-track");
+    const fill = card.querySelector(".w-tax-fill");
+    const val = card.querySelector(".w-tax-value");
+    const agg = card.querySelector(".w-tax-agg");
+    if (cumOrch > 0) {
+      const pct = (cumDelta / cumOrch) * 100;
+      if (track) track.classList.remove("is-hidden");
+      if (fill) fill.style.width = Math.min(100, pct) + "%";
+      if (val) val.textContent = cumDelta + " ms tax over " + cumOrch +
+        " ms wall (" + pct.toFixed(1) + "%)";
+      if (agg) agg.classList.add("is-hidden");
+    } else if (aggNote) {
+      // No per-move telemetry — surface the aggregate implementation-tax.
+      if (track) track.classList.add("is-hidden");
+      if (fill) fill.style.width = "0%";
+      if (val) val.textContent = aggNote.headline || "";
+      if (agg) {
+        agg.classList.remove("is-hidden");
+        agg.textContent = aggNote.explain || "";
+      }
+    } else {
+      if (track) track.classList.add("is-hidden");
+      if (fill) fill.style.width = "0%";
+      if (val) val.textContent = "no implementation-tax data for this game";
+      if (agg) agg.classList.add("is-hidden");
+    }
+  }
+
+  // Build an aggregate implementation-tax note for a Replay game from the event's
+  // per-engine stats (delta_p99 = ms/move of orchestration overhead). Compares the
+  // two engines and phrases it in terms of language, e.g. "Python paid +44 ms/move
+  // vs C++ here". Returns null if stats are unavailable.
+  function aggregateTaxNote(ev, white, black) {
+    if (!ev || !ev.stats) return null;
+    const sw = ev.stats[white], sb = ev.stats[black];
+    const dw = sw && sw.delta_p99 != null ? sw.delta_p99 : null;
+    const db = sb && sb.delta_p99 != null ? sb.delta_p99 : null;
+    if (dw == null && db == null) return null;
+    const langOf = n => { const e = CWC.engineOf(n); return (e && e.lang) || n; };
+    const lw = langOf(white), lb = langOf(black);
+    // Identify who paid more overhead.
+    let headline, explain;
+    if (dw != null && db != null) {
+      const diff = Math.abs(dw - db);
+      const hi = dw >= db ? lw : lb, lo = dw >= db ? lb : lw;
+      headline = hi + " paid +" + diff + " ms/move vs " + lo + " here";
+      explain = "No per-move telemetry recorded for this replay, so this is the " +
+        "aggregate p99 orchestration overhead from the event standings: " +
+        lw + " " + dw + " ms vs " + lb + " " + db + " ms per move.";
+    } else {
+      const only = dw != null ? lw : lb, ms = dw != null ? dw : db;
+      headline = only + " paid ~" + ms + " ms/move of implementation tax";
+      explain = "No per-move telemetry recorded for this replay; aggregate p99 " +
+        "orchestration overhead from the event standings.";
+    }
+    return { headline, explain };
   }
 
   function renderTelemetry(host, mv) {
@@ -144,8 +310,19 @@
     plateTop.appendChild(plateTopInfo); plateTop.appendChild(plateTopMat);
     boardCol.appendChild(plateTop);
 
+    // board + vertical eval bar side by side
+    const boardWrap = el("div", "w-board-wrap");
+    const evalBar = el("div", "w-eval");
+    evalBar.setAttribute("role", "img");
+    evalBar.setAttribute("aria-label", "material evaluation bar");
+    const evalWhite = el("div", "w-eval-white");
+    const evalLabel = el("span", "w-eval-label tnum", "");
+    evalBar.appendChild(evalWhite);
+    evalBar.appendChild(evalLabel);
     const boardEl = el("div", "w-board");
-    boardCol.appendChild(boardEl);
+    boardWrap.appendChild(evalBar);
+    boardWrap.appendChild(boardEl);
+    boardCol.appendChild(boardWrap);
 
     const plateBot = el("div", "w-plate w-plate-bot");
     const plateBotInfo = el("div", "w-plate-info");
@@ -156,16 +333,24 @@
     // transport (hidden in live)
     const transport = el("div", "w-transport");
     if (mode === "live") transport.classList.add("is-hidden");
-    const btn = (label, aria, cls) => {
+    // Plain-glyph buttons for first/prev/last; icon buttons for play & step so the
+    // two transport controls are visually distinct (was: two identical "▶").
+    const gbtn = (label, aria, cls) => {
       const b = el("button", "btn btn--sm w-tbtn" + (cls ? " " + cls : ""), label);
       b.type = "button"; b.setAttribute("aria-label", aria);
       return b;
     };
-    const bFirst = btn("⏮", "First move");
-    const bPrev = btn("◀", "Previous move");
-    const bPlay = btn("▶", "Play/pause", "w-play");
-    const bNext = btn("▶", "Next move");
-    const bLast = btn("⏭", "Last move");
+    const ibtn = (icon, aria, cls) => {
+      const b = el("button", "btn btn--sm w-tbtn" + (cls ? " " + cls : ""));
+      b.type = "button"; b.setAttribute("aria-label", aria);
+      b.innerHTML = CWC.icon(icon);
+      return b;
+    };
+    const bFirst = gbtn("⏮", "First move");
+    const bPrev = gbtn("◀", "Previous move");
+    const bPlay = ibtn("play", "Play", "w-play");        // #i-play / #i-pause
+    const bNext = ibtn("step", "Next move");             // #i-step (distinct glyph)
+    const bLast = gbtn("⏭", "Last move");
     const scrub = el("input", "w-scrub");
     scrub.type = "range"; scrub.min = "0"; scrub.value = "0"; scrub.setAttribute("aria-label", "Scrub moves");
     const plyLabel = el("span", "w-ply mono", "0 / 0");
@@ -191,7 +376,8 @@
 
     W.dom = {
       boardCol, plateTopInfo, plateTopMat, plateBotInfo, plateBotMat,
-      boardEl, transport, bFirst, bPrev, bPlay, bNext, bLast, scrub, plyLabel, speedSel,
+      boardEl, evalBar, evalWhite, evalLabel,
+      transport, bFirst, bPrev, bPlay, bNext, bLast, scrub, plyLabel, speedSel,
       ctxCol,
     };
 
@@ -273,14 +459,16 @@
     ctx.appendChild(result);
 
     // tax meter
-    const taxCard = el("div", "card w-tax");
+    const taxCard = el("div", "card w-tax"); taxCard.id = "w-tax-card";
     taxCard.appendChild(el("div", "w-tax-label", "implementation tax"));
     const track = el("div", "w-tax-track");
     const fill = el("div", "w-tax-fill"); fill.id = "w-tax-fill";
     track.appendChild(fill);
     taxCard.appendChild(track);
-    const val = el("div", "w-tax-value mono"); val.id = "w-tax-value";
+    const val = el("div", "w-tax-value tnum"); val.id = "w-tax-value";
     taxCard.appendChild(val);
+    const agg = el("div", "w-tax-agg is-hidden"); agg.id = "w-tax-agg";
+    taxCard.appendChild(agg);
     ctx.appendChild(taxCard);
 
     // telemetry stat grid
@@ -290,6 +478,8 @@
     // movelist
     const mlCard = el("div", "card w-ml-card");
     mlCard.appendChild(el("div", "w-ml-label", "moves"));
+    const spark = el("div", "w-ml-spark"); spark.id = "w-ml-spark";
+    mlCard.appendChild(spark);
     const ml = el("div", "w-movelist"); ml.id = "w-movelist";
     mlCard.appendChild(ml);
     ctx.appendChild(mlCard);
@@ -318,7 +508,12 @@
     W.rp.moves = g.moves || [];
     W.rp.white = g.white; W.rp.black = g.black;
     W.rp.whiteCountry = g.white_country; W.rp.blackCountry = g.black_country;
+    W.rp.whiteRating = g.white_rating != null ? g.white_rating : engineRating(g.white);
+    W.rp.blackRating = g.black_rating != null ? g.black_rating : engineRating(g.black);
+    W.rp.whiteForm = eventForm(ev, g.white);
+    W.rp.blackForm = eventForm(ev, g.black);
     W.rp.result = g.result; W.rp.reason = g.reason; W.rp.plies = g.plies;
+    W.rp.taxNote = aggregateTaxNote(ev, g.white, g.black);
     W.rp.wcId = null; W.rp.title = null;
     buildReplayContext();
     W.dom.scrub.max = String(W.rp.positions.length - 1);
@@ -346,6 +541,10 @@
     W.rp.white = firstW ? firstW.engine : null;
     W.rp.black = firstB ? firstB.engine : null;
     W.rp.whiteCountry = null; W.rp.blackCountry = null;
+    W.rp.whiteRating = engineRating(W.rp.white);
+    W.rp.blackRating = engineRating(W.rp.black);
+    W.rp.whiteForm = null; W.rp.blackForm = null;
+    W.rp.taxNote = null;
     W.rp.result = null; W.rp.reason = null; W.rp.plies = g.moves ? g.moves.length : 0;
     W.dom.scrub.max = String(W.rp.positions.length - 1);
     rpStop();
@@ -359,8 +558,10 @@
   }
 
   function rpLoadPlates() {
-    W.dom.plateTopInfo.innerHTML = plateHTML(W.rp.black, W.rp.blackCountry, "black");
-    W.dom.plateBotInfo.innerHTML = plateHTML(W.rp.white, W.rp.whiteCountry, "white");
+    W.dom.plateTopInfo.innerHTML = plateHTML(W.rp.black, W.rp.blackCountry, "black",
+      { rating: W.rp.blackRating, form: W.rp.blackForm });
+    W.dom.plateBotInfo.innerHTML = plateHTML(W.rp.white, W.rp.whiteCountry, "white",
+      { rating: W.rp.whiteRating, form: W.rp.whiteForm });
     const r = document.getElementById("w-result");
     if (r) {
       if (W.rp.result) {
@@ -379,21 +580,31 @@
     const fen = W.rp.positions[W.rp.i];
     const mv = W.rp.i > 0 ? W.rp.moves[W.rp.i - 1] : null;
     CWC.board.render(W.dom.boardEl, fen, { lastMove: mv ? mv.uci : null, coords: true });
+    // eval bar (material diff — always populated)
+    renderEval(fen);
     // material into plates
     W.dom.plateTopMat.innerHTML = materialHTML(fen, false); // black's captures
     W.dom.plateBotMat.innerHTML = materialHTML(fen, true);  // white's captures
     // telemetry
     renderTelemetry(document.getElementById("w-telemetry"), mv);
-    // cumulative tax
+    // cumulative tax (per-move) — or aggregate note when telemetry is absent
     let cumDelta = 0, cumOrch = 0;
     for (let k = 0; k < W.rp.i; k++) {
       cumDelta += (W.rp.moves[k] && W.rp.moves[k].delta_ms) || 0;
       cumOrch += (W.rp.moves[k] && W.rp.moves[k].orch_ms) || 0;
     }
-    renderTax(document.getElementById("w-tax-fill"), document.getElementById("w-tax-value"), cumDelta, cumOrch);
-    // movelist
+    const hasTelemetry = W.rp.moves.some(m => m.delta_ms != null || m.orch_ms != null);
+    // With per-move telemetry, always show the cumulative meter (0% at ply 0).
+    // Without it, fall back to the aggregate implementation-tax note.
+    if (hasTelemetry) {
+      renderTaxCumulative(document.getElementById("w-tax-card"), cumDelta, cumOrch);
+    } else {
+      renderTax(document.getElementById("w-tax-card"), 0, 0, W.rp.taxNote);
+    }
+    // movelist + node/time sparkline
     renderMovelist(document.getElementById("w-movelist"), W.rp.positions, W.rp.moves, W.rp.i,
       j => { rpStop(); rpShow(j); });
+    renderMoveSpark(document.getElementById("w-ml-spark"), W.rp.moves, W.rp.i);
     // transport
     W.dom.scrub.value = String(W.rp.i);
     W.dom.plyLabel.textContent = W.rp.i + " / " + (n - 1);
@@ -401,13 +612,13 @@
 
   function rpStop() {
     if (W.rp.playing) { clearInterval(W.rp.playing); W.rp.playing = null; }
-    if (W.dom && W.dom.bPlay) { W.dom.bPlay.textContent = "▶"; W.dom.bPlay.setAttribute("aria-label", "Play"); }
+    if (W.dom && W.dom.bPlay) { W.dom.bPlay.innerHTML = CWC.icon("play"); W.dom.bPlay.setAttribute("aria-label", "Play"); }
   }
   function rpTogglePlay() {
     if (W.rp.playing) { rpStop(); return; }
     if (W.rp.i >= W.rp.positions.length - 1) rpShow(0);
     if (W.rp.positions.length <= 1) return;
-    W.dom.bPlay.textContent = "⏸"; W.dom.bPlay.setAttribute("aria-label", "Pause");
+    W.dom.bPlay.innerHTML = CWC.icon("pause"); W.dom.bPlay.setAttribute("aria-label", "Pause");
     const period = 650 / W.rp.speed;
     W.rp.playing = setInterval(() => {
       if (W.rp.i >= W.rp.positions.length - 1) { rpStop(); return; }
@@ -475,13 +686,16 @@
     ctx.appendChild(picks);
 
     // tax meter
-    const taxCard = el("div", "card w-tax");
+    const taxCard = el("div", "card w-tax"); taxCard.id = "w-tax-card";
     taxCard.appendChild(el("div", "w-tax-label", "implementation tax (this game)"));
     const track = el("div", "w-tax-track");
     const fill = el("div", "w-tax-fill"); fill.id = "w-tax-fill";
     track.appendChild(fill);
     taxCard.appendChild(track);
-    taxCard.appendChild(el("div", "w-tax-value mono", "")).id = "w-tax-value";
+    const lval = el("div", "w-tax-value tnum"); lval.id = "w-tax-value";
+    taxCard.appendChild(lval);
+    const lagg = el("div", "w-tax-agg is-hidden"); lagg.id = "w-tax-agg";
+    taxCard.appendChild(lagg);
     ctx.appendChild(taxCard);
 
     const tele = el("div", "w-telemetry"); tele.id = "w-telemetry";
@@ -523,12 +737,12 @@
   function liveReset() {
     W.lv.game = { white: null, black: null, ply: 0, tax: 0, orch: 0 };
     CWC.board.render(W.dom.boardEl, START_FEN, { coords: true });
+    renderEval(START_FEN);
     W.dom.plateTopInfo.innerHTML = plateHTML(null, null, "black");
     W.dom.plateBotInfo.innerHTML = plateHTML(null, null, "white");
     W.dom.plateTopMat.innerHTML = "";
     W.dom.plateBotMat.innerHTML = "";
-    const tf = document.getElementById("w-tax-fill"); if (tf) tf.style.width = "0%";
-    const tv = document.getElementById("w-tax-value"); if (tv) tv.textContent = "";
+    renderTaxCumulative(document.getElementById("w-tax-card"), 0, 0);
     const tele = document.getElementById("w-telemetry"); if (tele) tele.innerHTML = "";
     const ticker = document.getElementById("w-ticker"); if (ticker) ticker.innerHTML = "";
   }
@@ -539,16 +753,19 @@
     const meta = liveEngineOf(r.engine);
     if (r.color === "w") {
       g.white = r.engine;
-      W.dom.plateBotInfo.innerHTML = plateHTML(r.engine, meta.country, "white", meta.lang);
+      W.dom.plateBotInfo.innerHTML = plateHTML(r.engine, meta.country, "white",
+        { lang: meta.lang, rating: meta.rating });
     } else {
       g.black = r.engine;
-      W.dom.plateTopInfo.innerHTML = plateHTML(r.engine, meta.country, "black", meta.lang);
+      W.dom.plateTopInfo.innerHTML = plateHTML(r.engine, meta.country, "black",
+        { lang: meta.lang, rating: meta.rating });
     }
     CWC.board.render(W.dom.boardEl, r.fen, { lastMove: r.move, coords: true });
+    renderEval(r.fen);
     W.dom.plateTopMat.innerHTML = materialHTML(r.fen, false);
     W.dom.plateBotMat.innerHTML = materialHTML(r.fen, true);
     g.tax += (r.delta_ms || 0); g.orch += (r.orch_ms || 0); g.ply = r.ply + 1;
-    renderTax(document.getElementById("w-tax-fill"), document.getElementById("w-tax-value"), g.tax, g.orch);
+    renderTaxCumulative(document.getElementById("w-tax-card"), g.tax, g.orch);
     renderTelemetry(document.getElementById("w-telemetry"),
       { uci: r.move, engine: r.engine, self_nodes: r.self_nodes, self_ms: r.self_ms,
         orch_ms: r.orch_ms, delta_ms: r.delta_ms });
@@ -665,7 +882,114 @@
     if (W.keyHandler) { document.removeEventListener("keydown", W.keyHandler); W.keyHandler = null; }
   }
 
+  /* ================= result ticker (B6) ================= */
+  // Horizontal strip of the last ~6 played results (mini flags + score), sourced
+  // from tournament state. Subscribes to wc:updated to prepend new results.
+  const RT = { host: null, seen: {} };
+
+  function rtHost() {
+    if (!RT.host) RT.host = document.getElementById("result-ticker");
+    return RT.host;
+  }
+
+  // Map a played match to a display record. score is "captures" style W–L via
+  // the match result string (1-0 / 0-1 / draw) rendered from each side's view.
+  function rtRecord(m, teamsById) {
+    const ta = teamsById[m.a], tb = teamsById[m.b];
+    if (!ta || !tb) return null;
+    let sa = "½", sb = "½";
+    if (m.result === "1-0") { sa = "1"; sb = "0"; }
+    else if (m.result === "0-1") { sa = "0"; sb = "1"; }
+    return {
+      id: m.id,
+      aCode: ta.country, bCode: tb.country,
+      aName: ta.country, bName: tb.country,
+      sa, sb,
+      aWin: m.winner === m.a, bWin: m.winner === m.b,
+    };
+  }
+
+  function rtChip(rec) {
+    const c = el("div", "rt-item chip chip--result");
+    c.innerHTML =
+      '<span class="rt-side' + (rec.aWin ? " is-win" : "") + '">' +
+        '<span class="rt-flag" aria-hidden="true">' + esc(CWC.flag(rec.aCode)) + "</span>" +
+        '<span class="rt-code">' + esc(rec.aName) + "</span></span>" +
+      '<span class="rt-score tnum">' + esc(rec.sa) + "–" + esc(rec.sb) + "</span>" +
+      '<span class="rt-side' + (rec.bWin ? " is-win" : "") + '">' +
+        '<span class="rt-code">' + esc(rec.bName) + "</span>" +
+        '<span class="rt-flag" aria-hidden="true">' + esc(CWC.flag(rec.bCode)) + "</span></span>";
+    return c;
+  }
+
+  function collectPlayed(state) {
+    const out = [];
+    (state.fixtures || []).forEach(m => { if (m.played) out.push(m); });
+    (state.knockout || []).forEach(r => (r.ties || []).forEach(t => { if (t.played) out.push(t); }));
+    return out;
+  }
+
+  // Full (re)build from a state snapshot (last 6, newest first).
+  function rebuildTicker(state) {
+    const host = rtHost();
+    if (!host || !state) return;
+    const teamsById = state.teams || {};
+    const played = collectPlayed(state);
+    host.innerHTML = "";
+    RT.seen = {};
+    played.slice(-6).reverse().forEach(m => {
+      const rec = rtRecord(m, teamsById);
+      if (!rec) return;
+      RT.seen[rec.id] = true;
+      host.appendChild(rtChip(rec));
+    });
+  }
+
+  // Prepend newly-played results on a wc:updated event.
+  function updateTicker(state) {
+    const host = rtHost();
+    if (!host || !state) return;
+    if (!host.childElementCount) { rebuildTicker(state); return; }
+    const teamsById = state.teams || {};
+    const played = collectPlayed(state);
+    const fresh = played.filter(m => !RT.seen[m.id]);
+    if (!fresh.length) return;
+    fresh.forEach(m => {
+      const rec = rtRecord(m, teamsById);
+      if (!rec) return;
+      RT.seen[rec.id] = true;
+      const chip = rtChip(rec);
+      if (!CWC.reducedMotion()) CWC.anim.flash(chip, "rt-new", 900);
+      host.insertBefore(chip, host.firstChild);
+    });
+    while (host.childElementCount > 6) host.removeChild(host.lastChild);
+  }
+
+  CWC.bus.on("wc:updated", state => {
+    // state may be the WC public_state (has .teams); if not, ignore.
+    if (state && state.teams) updateTicker(state);
+  });
+  // Populate from whatever tournament data is present at load.
+  CWC.bus.on("data:loaded", () => {
+    const d = CWC.state.data;
+    if (d && d.teams) rebuildTicker(d);
+  });
+
   /* ================= view shell ================= */
+
+  // On first opportunity, seed the result ticker from live tournament state.
+  let rtSeeded = false;
+  async function seedTicker() {
+    if (rtSeeded) return;
+    rtSeeded = true;
+    if (CWC.state.live) {
+      try { const st = await CWC.api.get("/api/tournament"); if (st && st.teams) rebuildTicker(st); }
+      catch (e) { /* ignore */ }
+    } else if (CWC.state.data && CWC.state.data.teams) {
+      rebuildTicker(CWC.state.data);
+    }
+  }
+  CWC.bus.on("route:change", seedTicker);
 
   CWC.registerView("watch", {
     init() { W.el = this._el; },

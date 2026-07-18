@@ -34,6 +34,47 @@
     return '<svg class="ico" aria-hidden="true"><use href="#i-' + name + '"></use></svg>';
   };
 
+  /* ---------- reduced-motion ---------- */
+  function reducedMotion() {
+    try { return window.matchMedia("(prefers-reduced-motion: reduce)").matches; }
+    catch (e) { return false; }
+  }
+  CWC.reducedMotion = reducedMotion;
+
+  /* ---------- animation utilities (single source for number/price motion) ---------- */
+  CWC.anim = {
+    // countUp(el, from, to, {fmt, ms}) — rAF tween; instant under reduced-motion
+    countUp(el, from, to, opts) {
+      opts = opts || {};
+      const fmt = typeof opts.fmt === "function" ? opts.fmt : (v => String(v));
+      const ms = opts.ms == null ? 500 : opts.ms;
+      from = Number(from) || 0; to = Number(to) || 0;
+      if (!el) return;
+      if (reducedMotion() || ms <= 0 || from === to) { el.textContent = fmt(to); return; }
+      const start = (typeof performance !== "undefined" ? performance.now() : Date.now());
+      function frame(now) {
+        const t = Math.min(1, (now - start) / ms);
+        const eased = 1 - Math.pow(1 - t, 3); // easeOutCubic
+        el.textContent = fmt(from + (to - from) * eased);
+        if (t < 1) requestAnimationFrame(frame);
+        else el.textContent = fmt(to);
+      }
+      requestAnimationFrame(frame);
+    },
+    // flash(el, cls, ms) — add class, remove after ms (near-instant under reduced-motion)
+    flash(el, cls, ms) {
+      if (!el) return;
+      cls = cls || "is-flash";
+      ms = ms == null ? 600 : ms;
+      el.classList.remove(cls);
+      // force reflow so re-adding the class restarts the animation
+      void el.offsetWidth;
+      el.classList.add(cls);
+      const wait = reducedMotion() ? 0 : ms;
+      setTimeout(() => { el.classList.remove(cls); }, wait);
+    }
+  };
+
   /* ---------- view registry + router ---------- */
   const VIEWS = Object.create(null);  // id -> {init,show,hide,_inited,_el}
   const VALID = ["tournament", "watch", "betting", "analysis"];
@@ -106,11 +147,32 @@
   };
 
   /* ---------- flag / lang / engine ---------- */
+  // Subdivision (non-ISO2) flags built as tag sequences: 0x1F3F4 + tag chars + 0xE007F.
+  const SUBDIV = { ENG: "gbeng", SCT: "gbsct", WLS: "gbwls" };
+  function tagFlag(subtag) {
+    const cps = [0x1f3f4];
+    for (let i = 0; i < subtag.length; i++) cps.push(0xe0000 + subtag.charCodeAt(i));
+    cps.push(0xe007f);
+    return String.fromCodePoint.apply(null, cps);
+  }
   CWC.flag = function (cc) {
+    const code = String(cc || "").toUpperCase();
+    if (SUBDIV[code]) return tagFlag(SUBDIV[code]);
     if (!cc || cc.length !== 2 || !/^[A-Za-z]{2}$/.test(cc)) return "\u{1F3F3}"; // white flag fallback
     const A = 0x1f1e6;
-    return String.fromCodePoint(A + cc.toUpperCase().charCodeAt(0) - 65,
-                                A + cc.toUpperCase().charCodeAt(1) - 65);
+    return String.fromCodePoint(A + code.charCodeAt(0) - 65,
+                                A + code.charCodeAt(1) - 65);
+  };
+  // flagBadge(code, name) — flag glyph + a small readable abbreviation for
+  // subdivision / unknown codes (in case the platform renders a bare black flag).
+  CWC.flagBadge = function (code, name) {
+    const raw = String(code || "").toUpperCase();
+    const glyph = CWC.flag(code);
+    const isIso2 = /^[A-Za-z]{2}$/.test(raw) && !SUBDIV[raw];
+    const html = '<span class="flag" title="' + CWC.esc(name || raw) + '">' + glyph + "</span>";
+    if (isIso2) return html;
+    const label = raw || "?";
+    return html + '<span class="flag-abbr">' + CWC.esc(label) + "</span>";
   };
 
   // Maps a language name (as delivered in data) to a CSS var token key.
@@ -186,6 +248,7 @@
         for (let i = 0; i < 3; i++) el.appendChild(CWC.el("div", "skeleton skeleton--line"));
       }
     },
+    teamPopover(anchorEl, htmlContent) { return CWC.teamPopover(anchorEl, htmlContent); },
     toast(msg, kind) {
       let host = document.getElementById("toast-host");
       if (!host) { host = CWC.el("div"); host.id = "toast-host"; document.body.appendChild(host); }
@@ -199,6 +262,54 @@
       return t;
     }
   };
+
+  /* ---------- team popover (generic, one open at a time) ---------- */
+  let _popEl = null, _popCleanup = null;
+  CWC.closeTeamPopover = function () {
+    if (_popCleanup) { try { _popCleanup(); } catch (e) {} _popCleanup = null; }
+    if (_popEl) { _popEl.remove(); _popEl = null; }
+  };
+  CWC.teamPopover = function (anchorEl, htmlContent) {
+    CWC.closeTeamPopover();
+    if (!anchorEl) return null;
+    const pop = CWC.el("div", "team-pop");
+    pop.setAttribute("role", "dialog");
+    pop.innerHTML = htmlContent == null ? "" : htmlContent;
+    document.body.appendChild(pop);
+    _popEl = pop;
+
+    // position near anchor (below by default, flip up if it would overflow)
+    const r = anchorEl.getBoundingClientRect();
+    const sx = window.scrollX || 0, sy = window.scrollY || 0;
+    let top = r.bottom + sy + 6;
+    let left = r.left + sx;
+    const pw = pop.offsetWidth, ph = pop.offsetHeight;
+    if (left + pw > sx + document.documentElement.clientWidth - 8)
+      left = Math.max(sx + 8, sx + document.documentElement.clientWidth - pw - 8);
+    if (r.bottom + ph + 6 > document.documentElement.clientHeight && r.top - ph - 6 > 0)
+      top = r.top + sy - ph - 6;
+    pop.style.top = top + "px";
+    pop.style.left = left + "px";
+
+    function onKey(e) { if (e.key === "Escape") { CWC.closeTeamPopover(); } }
+    function onDown(e) {
+      if (pop.contains(e.target) || anchorEl.contains(e.target)) return;
+      CWC.closeTeamPopover();
+    }
+    // defer outside-click binding so the opening click doesn't immediately close it
+    setTimeout(() => document.addEventListener("mousedown", onDown, true), 0);
+    document.addEventListener("keydown", onKey, true);
+    _popCleanup = function () {
+      document.removeEventListener("keydown", onKey, true);
+      document.removeEventListener("mousedown", onDown, true);
+    };
+    return pop;
+  };
+
+  /* ---------- route -> body view class ---------- */
+  CWC.bus.on("route:change", function (r) {
+    if (r && r.id) document.body.dataset.view = r.id;
+  });
 
   /* ---------- demo payload (tournament.json-shaped) ---------- */
   CWC.__demo = {

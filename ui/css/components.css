@@ -19,15 +19,35 @@
   border-radius:var(--r-pill); padding:var(--s-1) var(--s-3);
   font-size:var(--fs-xs); line-height:var(--lh-tight); min-height:28px;
 }
+/* reduced-weight language chip: thin padding, ~6% tint, keep 3px spine */
 .chip--lang{
+  border:1px solid transparent;
   border-radius:var(--r-s); border-left:3px solid var(--dim);
-  padding-left:var(--s-2); background:var(--surface-2);
+  padding:1px var(--s-2); min-height:auto; font-size:var(--fs-xs);
+  background:color-mix(in srgb,var(--dim) 6%,transparent); color:var(--ink-2);
 }
-.chip--lang[data-lang="cpp"]{ border-left-color:var(--lang-cpp); background:color-mix(in srgb,var(--lang-cpp) 12%,var(--surface-2)); }
-.chip--lang[data-lang="rust"]{ border-left-color:var(--lang-rust); background:color-mix(in srgb,var(--lang-rust) 12%,var(--surface-2)); }
-.chip--lang[data-lang="js"]{ border-left-color:var(--lang-js); background:color-mix(in srgb,var(--lang-js) 12%,var(--surface-2)); }
-.chip--lang[data-lang="py"]{ border-left-color:var(--lang-py); background:color-mix(in srgb,var(--lang-py) 12%,var(--surface-2)); }
+.chip--lang[data-lang="cpp"]{ border-left-color:var(--lang-cpp); background:color-mix(in srgb,var(--lang-cpp) 6%,transparent); }
+.chip--lang[data-lang="rust"]{ border-left-color:var(--lang-rust); background:color-mix(in srgb,var(--lang-rust) 6%,transparent); }
+.chip--lang[data-lang="js"]{ border-left-color:var(--lang-js); background:color-mix(in srgb,var(--lang-js) 6%,transparent); }
+.chip--lang[data-lang="py"]{ border-left-color:var(--lang-py); background:color-mix(in srgb,var(--lang-py) 6%,transparent); }
 .chip--lang[data-lang="none"]{ border-left-color:var(--lang-none); }
+
+/* LIVE indicator chip — dominant */
+.chip--live{
+  color:var(--green); border-color:var(--green); background:var(--green-bg);
+  font-weight:700; text-transform:uppercase; letter-spacing:.4px;
+}
+/* score / result pill */
+.chip--result{
+  font-family:var(--mono); font-variant-numeric:tabular-nums; font-weight:700;
+  background:var(--surface-3); color:var(--ink); border-color:var(--line-strong);
+}
+
+/* small country/subdivision flag abbreviation, keeps bare-flag glyphs readable */
+.flag-abbr{
+  font-size:9px; font-weight:700; letter-spacing:.3px; color:var(--dim);
+  vertical-align:.1em; margin-left:2px; font-family:var(--mono);
+}
 
 /* buttons */
 .btn{
@@ -49,6 +69,9 @@
 .btn--ghost:hover{ background:var(--surface-2); }
 .btn--danger{ background:var(--red-bg); color:var(--red); border-color:transparent; }
 .btn--danger:hover{ background:color-mix(in srgb,var(--red) 24%,transparent); }
+/* gold outline ghost button */
+.btn--accent-ghost{ background:transparent; color:var(--accent); border-color:var(--accent); }
+.btn--accent-ghost:hover{ background:var(--accent-bg); }
 .btn--sm{ padding:var(--s-1) var(--s-2); font-size:var(--fs-xs); min-height:24px; }
 @media (pointer:coarse){ .btn{ min-height:40px; } }
 
@@ -154,6 +177,44 @@ dialog.modal .modal-close:hover{ background:var(--surface-2); color:var(--ink); 
 
 /* spark svg default */
 svg.spark{ display:block; }
+
+/* tabular numerals helper */
+.tnum{ font-variant-numeric:tabular-nums; font-family:var(--mono); }
+
+/* compact 3-segment W/D/L micro-bar with single dominant label */
+.odds--micro{
+  position:relative; display:inline-flex; width:44px; height:8px;
+  border-radius:var(--r-pill); overflow:hidden; flex:0 0 auto; vertical-align:middle;
+  border:1px solid var(--line);
+}
+.odds--micro i{ display:block; height:100%; }
+.odds--micro .odds-w{ background:var(--green); }
+.odds--micro .odds-d{ background:var(--dim); }
+.odds--micro .odds-l{ background:var(--red); }
+.odds--micro-wrap{ display:inline-flex; align-items:center; gap:var(--s-1); }
+.odds--micro-lbl{
+  font-family:var(--mono); font-variant-numeric:tabular-nums; font-size:var(--fs-xs);
+  color:var(--ink-2); font-weight:700;
+}
+/* capped / near-certain outcome: grey ">99%" text, never a raw decimal */
+.odds-cap{ color:var(--dim); font-family:var(--mono); font-size:var(--fs-xs); font-weight:600; }
+
+/* anchored team-profile popover */
+.team-pop{
+  position:absolute; z-index:60; max-width:280px;
+  background:var(--surface-2); border:1px solid var(--line-strong);
+  border-radius:var(--r-m); box-shadow:var(--shadow-2);
+  padding:var(--s-3); font-size:var(--fs-s); color:var(--ink);
+}
+.team-pop[hidden]{ display:none; }
+
+/* brief highlight flash — reduced-motion safe */
+.is-flash{ animation:cwc-flash 600ms var(--ease); }
+@keyframes cwc-flash{
+  0%{ background:var(--accent-bg); box-shadow:var(--gold-glow); }
+  100%{ background:transparent; box-shadow:none; }
+}
+@media (prefers-reduced-motion:reduce){ .is-flash{ animation:none; } }
 
 /* live dot pulse */
 .live-dot{ display:inline-block; width:8px; height:8px; border-radius:50%;

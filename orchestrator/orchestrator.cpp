@@ -34,7 +34,8 @@ struct Options {
     int games = 100;
     bool nodes_mode = false;
     long long movetime = 100; // ms
-    long long nodes = 100000;
+    long long nodes1 = 100000; // engine1 (white) node budget
+    long long nodes2 = 100000; // engine2 (black) node budget
     long long warmup_ms = 2000; // discarded warm-up; <=0 skips it
     unsigned long long seed1 = 1, seed2 = 2;
 };
@@ -96,10 +97,10 @@ bool handshake(Engine& e) {
 // Discarded warm-up so we measure chess, not JIT/first-call allocation.
 // Skipped when warmup_ms <= 0 (e.g. the casual World Cup, where it isn't the
 // measurement that matters and per-match latency should stay low).
-void warmup(Engine& e, const Options& o) {
+void warmup(Engine& e, const Options& o, long long nodes) {
     if (o.warmup_ms <= 0) return;
     e.proc.send("position startpos");
-    if (o.nodes_mode) e.proc.send("go nodes " + std::to_string(o.nodes));
+    if (o.nodes_mode) e.proc.send("go nodes " + std::to_string(nodes));
     else              e.proc.send("go movetime " + std::to_string(o.warmup_ms));
     std::string line; bool to;
     while (e.proc.read_line(line, 10000, to)) {
@@ -117,10 +118,11 @@ struct MoveResult {
     long long self_nodes = 0;
 };
 
-MoveResult request_move(Engine& e, const std::string& moves_cmd, const Options& o) {
+MoveResult request_move(Engine& e, const std::string& moves_cmd, const Options& o,
+                        long long nodes) {
     MoveResult r;
     e.proc.send(moves_cmd);
-    if (o.nodes_mode) e.proc.send("go nodes " + std::to_string(o.nodes));
+    if (o.nodes_mode) e.proc.send("go nodes " + std::to_string(nodes));
     else              e.proc.send("go movetime " + std::to_string(o.movetime));
 
     // Deadline: generous slack over the budget so a healthy engine never trips it,
@@ -186,7 +188,9 @@ int main(int argc, char** argv) {
         else if (a == "--games") o.games = std::stoi(next());
         else if (a == "--warmup-ms") o.warmup_ms = std::stoll(next());
         else if (a == "--movetime") { o.movetime = std::stoll(next()); o.nodes_mode = false; }
-        else if (a == "--nodes") { o.nodes = std::stoll(next()); o.nodes_mode = true; }
+        else if (a == "--nodes") { o.nodes1 = o.nodes2 = std::stoll(next()); o.nodes_mode = true; }
+        else if (a == "--nodes1") { o.nodes1 = std::stoll(next()); o.nodes_mode = true; }
+        else if (a == "--nodes2") { o.nodes2 = std::stoll(next()); o.nodes_mode = true; }
         else if (a == "--seed1") o.seed1 = std::stoull(next());
         else if (a == "--seed2") o.seed2 = std::stoull(next());
     }
@@ -206,13 +210,16 @@ int main(int argc, char** argv) {
     if (!handshake(e1) || !handshake(e2)) {
         std::cerr << "handshake failed\n"; g_protocol_errors++; return 1;
     }
-    warmup(e1, o);
-    warmup(e2, o);
+    warmup(e1, o, o.nodes1);
+    warmup(e2, o, o.nodes2);
 
     std::ofstream log(o.log);
-    std::printf("mode: %s   budget: %lld   games: %d\n",
-                o.nodes_mode ? "nodes" : "movetime",
-                o.nodes_mode ? o.nodes : o.movetime, o.games);
+    if (o.nodes_mode)
+        std::printf("mode: nodes   budget1: %lld  budget2: %lld   games: %d\n",
+                    o.nodes1, o.nodes2, o.games);
+    else
+        std::printf("mode: movetime   budget: %lld   games: %d\n",
+                    o.movetime, o.games);
     std::printf("engine1: %s [lang=%s family=%s country=%s]\n",
                 e1.name.c_str(), e1.lang.c_str(), e1.family.c_str(), e1.country.c_str());
     std::printf("engine2: %s [lang=%s family=%s country=%s]\n\n",
@@ -275,6 +282,9 @@ int main(int argc, char** argv) {
 
             Color stm = board.side_to_move();
             Engine& mover = (stm == WHITE) ? white : black;
+            // The mover is engine1 iff it is white-and-e1_white, or black-and-not.
+            bool mover_is_e1 = (stm == WHITE) ? e1_white : !e1_white;
+            long long mover_nodes = mover_is_e1 ? o.nodes1 : o.nodes2;
 
             std::string cmd = "position startpos";
             if (!moves.empty()) {
@@ -282,7 +292,7 @@ int main(int argc, char** argv) {
                 for (auto& mv : moves) cmd += " " + mv;
             }
             std::string fen_before = board.fen();
-            MoveResult mr = request_move(mover, cmd, o);
+            MoveResult mr = request_move(mover, cmd, o, mover_nodes);
 
             if (mr.timed_out) {
                 std::cerr << "TIMEOUT g" << g << " ply" << ply
@@ -313,7 +323,7 @@ int main(int argc, char** argv) {
                 << ",\"color\":\"" << (stm == WHITE ? "w" : "b") << "\""
                 << ",\"engine\":\"" << mover.name << "\""
                 << ",\"mode\":\"" << (o.nodes_mode ? "nodes" : "movetime") << "\""
-                << ",\"budget\":" << (o.nodes_mode ? o.nodes : o.movetime)
+                << ",\"budget\":" << (o.nodes_mode ? mover_nodes : o.movetime)
                 << ",\"move\":\"" << mr.uci << "\""
                 << ",\"orch_ms\":" << mr.orch_ms
                 << ",\"self_ms\":" << mr.self_ms
@@ -338,7 +348,9 @@ int main(int argc, char** argv) {
         // Authoritative per-game result record (the UI/analysis read this).
         log << "{\"type\":\"result\",\"game\":" << g
             << ",\"mode\":\"" << (o.nodes_mode ? "nodes" : "movetime") << "\""
-            << ",\"budget\":" << (o.nodes_mode ? o.nodes : o.movetime)
+            << ",\"budget\":" << (o.nodes_mode ? o.nodes1 : o.movetime)
+            << ",\"budget1\":" << (o.nodes_mode ? o.nodes1 : o.movetime)
+            << ",\"budget2\":" << (o.nodes_mode ? o.nodes2 : o.movetime)
             << ",\"white\":\"" << white.name << "\",\"black\":\"" << black.name << "\""
             << ",\"white_country\":\"" << white.country << "\""
             << ",\"black_country\":\"" << black.country << "\""

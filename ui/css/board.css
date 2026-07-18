@@ -1,0 +1,126 @@
+/* board.css — owned by WS-1 (board). Loads after components.css so it wins.
+   Renders a lichess-caliber SVG board built by board.js. */
+
+/* frame wrapper (optional; board.js does not require it but styling is provided) */
+.cwc-board-frame{
+  border-radius:var(--r-m);
+  box-shadow:var(--shadow-2);
+  overflow:hidden;
+  background:var(--surface);
+}
+
+/* the grid itself keeps square corners under overflow:hidden */
+.cwc-board{
+  position:relative;
+  display:grid;
+  grid-template-columns:repeat(8,1fr);
+  grid-template-rows:repeat(8,1fr);
+  aspect-ratio:1; width:100%;
+  border:0; border-radius:0;
+  overflow:hidden;
+  user-select:none;
+  -webkit-user-select:none;
+}
+
+.cwc-sq{
+  position:relative;
+  display:flex; align-items:center; justify-content:center;
+  line-height:1;
+}
+.cwc-sq.is-light{ background:var(--board-light); }
+.cwc-sq.is-dark{ background:var(--board-dark); }
+
+/* ---- piece ---- */
+.cwc-pc{
+  position:relative; z-index:2;
+  width:92%; height:92%;
+  display:block;
+  pointer-events:none;
+  filter:var(--pc-shadow);
+}
+/* unicode glyph fallback (when the SVG sprite is missing) */
+.cwc-sq > .cwc-pc-glyph{
+  width:auto; height:auto;
+  font-size:clamp(18px,5vw,44px);
+  filter:none;
+}
+.cwc-pc-glyph.is-w{ color:var(--pc-white); text-shadow:var(--pc-white-shadow); }
+.cwc-pc-glyph.is-b{ color:var(--pc-black); text-shadow:var(--pc-black-shadow); }
+
+/* ---- last-move highlight (gold tint on from + to) ---- */
+.cwc-sq.is-hl::after{
+  content:""; position:absolute; inset:0;
+  background:var(--board-hl);
+  z-index:0;
+}
+
+/* ---- selected square: stronger gold + inset ring ---- */
+.cwc-sq.is-selected::after{
+  content:""; position:absolute; inset:0;
+  background:var(--board-hl);
+  box-shadow:inset 0 0 0 3px var(--accent);
+  z-index:1;
+}
+
+/* ---- check: radial red glow under the king ---- */
+.cwc-sq.is-check::before{
+  content:""; position:absolute; inset:0;
+  background:radial-gradient(circle at center,
+    rgba(248,113,113,.9) 0%,
+    rgba(248,113,113,.55) 32%,
+    rgba(248,113,113,0) 72%);
+  z-index:1;
+}
+
+/* ---- legal move targets: dot on empty, hollow ring on occupied ---- */
+.cwc-target{
+  position:absolute; inset:0; z-index:3;
+  pointer-events:none;
+  display:flex; align-items:center; justify-content:center;
+}
+.cwc-target::after{
+  content:""; display:block;
+  width:32%; height:32%; border-radius:50%;
+  background:rgba(20,26,34,.32);
+}
+.cwc-target.is-capture::after{
+  width:88%; height:88%;
+  background:transparent;
+  border:3px solid rgba(20,26,34,.30);
+  box-sizing:border-box;
+}
+
+/* ---- coordinates: colored to the OPPOSITE square color ---- */
+.cwc-coord{
+  position:absolute; z-index:4;
+  font-size:clamp(7px,1.4vw,11px);
+  font-family:var(--mono);
+  font-weight:600;
+  line-height:1;
+  pointer-events:none;
+}
+.cwc-coord-r{ top:2px; left:3px; }
+.cwc-coord-f{ bottom:2px; right:3px; }
+/* light square -> dark coord color; dark square -> light coord color */
+.cwc-sq.is-light .cwc-coord{ color:var(--board-dark); }
+.cwc-sq.is-dark  .cwc-coord{ color:var(--board-light); }
+
+/* ---- move glide animation overlays ---- */
+.cwc-overlay{
+  position:absolute; z-index:9;
+  pointer-events:none;
+}
+.cwc-glide{
+  will-change:transform;
+  transition:transform 150ms cubic-bezier(.22,.61,.36,1);
+}
+.cwc-fade-out{
+  will-change:opacity;
+  transition:opacity 150ms cubic-bezier(.22,.61,.36,1);
+  opacity:1; z-index:8;
+}
+
+@media (prefers-reduced-motion: reduce){
+  .cwc-glide{ transition:none; }
+  .cwc-fade-out{ transition:none; opacity:0; }
+}

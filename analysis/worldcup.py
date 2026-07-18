@@ -21,8 +21,40 @@ sys.path.insert(0, os.path.join(ROOT, "shim", "py"))
 from libchess_ffi import Board  # noqa: E402
 
 STATE_FILE = os.path.join(ROOT, "runs", "worldcup.json")
+DATA_FILE = os.path.join(ROOT, "analysis", "data", "wc2026.json")
 GROUP_BUDGET = 6000
 KO_BUDGET = 10000
+
+# --- FIFA-strength model ---------------------------------------------------
+# A team's chess strength (Elo-like rating) is derived from its FIFA ranking
+# points; node budget is derived from rating. Engine/language is only a
+# cosmetic "flavour" assigned by pot — it does NOT drive strength.
+RATING_A = 1650.0     # rating of a 1550-point FIFA side
+RATING_B = 0.55       # rating gained per FIFA point over 1550
+NODE_ANCHOR = 1770    # rating that maps to NODE_BASE nodes
+NODE_BASE = 6000
+NODE_SLOPE = 120      # rating points per doubling of node budget
+STATE_VERSION = 2     # bump to force a clean rebuild of persisted state
+
+GROUP_LETTERS = "ABCDEFGHIJKL"
+
+# language "flavour" by pot (cycles deterministically; rating is independent
+# of engine). Pot 1 gets the strongest search engines, pot 4 the weakest.
+POT_ENGINES = {
+    1: ["cpp-alphabeta", "rs-alphabeta", "js-alphabeta", "py-alphabeta"],
+    2: ["cpp-alphabeta", "rs-alphabeta", "js-alphabeta", "py-mcts"],
+    3: ["js-alphabeta", "py-mcts", "cpp-greedy"],
+    4: ["py-mcts", "cpp-greedy", "py-greedy", "random"],
+}
+
+
+def _rating_of(fifa):
+    return RATING_A + RATING_B * (fifa - 1550)
+
+
+def _nodes_of(rating):
+    return max(1500, min(60000,
+                         round(NODE_BASE * 2 ** ((rating - NODE_ANCHOR) / NODE_SLOPE) / 500) * 500))
 
 ENGINES = {
     "cpp-alphabeta": [os.path.join(ROOT, "build", "cpp-alphabeta")],
@@ -89,14 +121,23 @@ class WorldCup:
                 pass
         return hist
 
-    def odds(self, ea, eb):
-        """Implied (win, draw, loss) probabilities for engine ea vs eb."""
-        h = self._hist.get((ea, eb), {"w": 0, "d": 0, "l": 0})
-        n = h["w"] + h["d"] + h["l"]
-        if n >= 6:  # enough historical games -> empirical (Laplace-smoothed)
-            return [(h["w"] + 1) / (n + 3), (h["d"] + 1) / (n + 3), (h["l"] + 1) / (n + 3)]
-        # Fall back to an Elo model with a draw term.
-        ra, rb = ENGINE_RATING[ea], ENGINE_RATING[eb]
+    @staticmethod
+    def _as_rating(x):
+        """Accept a numeric rating directly, or an engine name (legacy betting
+        API), and return a rating. Team ratings drive the World Cup; the
+        engine->rating map only backs the standalone /api/odds engine matrix."""
+        if isinstance(x, (int, float)):
+            return float(x)
+        return float(ENGINE_RATING[x])
+
+    def odds(self, ra, rb):
+        """Implied (win, draw, loss) probabilities from two ratings.
+
+        `ra`/`rb` may be numeric ratings (the World Cup path) or engine names
+        (the legacy engine-matrix betting API). The empirical-history override
+        was removed: history is keyed by engine, but two real teams can share
+        an engine flavour at very different ratings, so it no longer applies."""
+        ra, rb = self._as_rating(ra), self._as_rating(rb)
         exp = 1.0 / (1.0 + 10 ** ((rb - ra) / 400.0))
         pdraw = 0.35 * math.exp(-((ra - rb) / 220.0) ** 2)
         pw = max(0.02, exp - pdraw / 2)
@@ -105,25 +146,66 @@ class WorldCup:
         return [pw / tot, pdraw / tot, pl / tot]
 
     # ---------- the draw ----------
-    def new(self, seed=None):
+    @staticmethod
+    def _load_draw():
+        with open(DATA_FILE) as f:
+            return json.load(f)["groups"]
+
+    def new(self, seed=None, real=True):
+        """Build the REAL 2026 World Cup: 48 teams in the drawn groups A-L.
+
+        `new(real=True)` with `seed=None` reproduces the real draw exactly.
+        With a random seed it performs a **new draw**: teams are reshuffled
+        *within each pot* across the 12 groups (the same 48 real teams, new
+        group assignments). NOTE: the UEFA "max two from a confederation per
+        group" constraint is intentionally dropped for this casual reshuffle."""
         import random
         rng = random.Random(seed)
+        draw = self._load_draw()
+
+        # Collect the four pots across all groups, preserving group letters.
+        pot_members = {1: [], 2: [], 3: [], 4: []}  # pot -> [(name,code,pot,fifa)]
+        group_slots = {}  # letter -> list of pots (order in the json)
+        for letter in GROUP_LETTERS:
+            group_slots[letter] = []
+            for entry in draw[letter]:
+                name, code, pot, fifa = entry
+                pot_members[pot].append((name, code, pot, fifa))
+                group_slots[letter].append(pot)
+
+        # A "new draw": reshuffle each pot, then deal one team per pot per group.
+        if seed is not None:
+            for p in pot_members.values():
+                rng.shuffle(p)
+        cursor = {1: 0, 2: 0, 3: 0, 4: 0}
+        group_teams = {letter: [] for letter in GROUP_LETTERS}  # letter -> entries
+        for letter in GROUP_LETTERS:
+            for pot in group_slots[letter]:
+                group_teams[letter].append(pot_members[pot][cursor[pot]])
+                cursor[pot] += 1
+
+        # Assign a cosmetic engine per team by cycling POT_ENGINES[pot]
+        # deterministically across the pot's teams (in draw/deal order).
+        pot_engine_idx = {1: 0, 2: 0, 3: 0, 4: 0}
         teams = []
-        for i in range(48):
-            eng = SLOT_ENGINES[i]
-            teams.append({"id": i, "engine": eng, "lang": ENGINE_LANG[eng],
-                          "rating": ENGINE_RATING[eng] + (len(SLOT_ENGINES) - i) * 0.3})
-        countries = COUNTRIES[:]
-        rng.shuffle(countries)
-        for i, t in enumerate(teams):
-            t["country"] = countries[i]
-            t["name"] = countries[i]
-        # Pots by rating, then snake-draw one per pot into each group.
-        by_rating = sorted(teams, key=lambda t: t["rating"], reverse=True)
-        pots = [by_rating[p * 12:(p + 1) * 12] for p in range(4)]
-        for p in pots:
-            rng.shuffle(p)
-        groups = [[pots[p][g]["id"] for p in range(4)] for g in range(12)]
+        groups = []  # numeric group index -> list of team ids
+        tid = 0
+        for gi, letter in enumerate(GROUP_LETTERS):
+            member_ids = []
+            for (name, code, pot, fifa) in group_teams[letter]:
+                pe = POT_ENGINES[pot]
+                eng = pe[pot_engine_idx[pot] % len(pe)]
+                pot_engine_idx[pot] += 1
+                rating = _rating_of(fifa)
+                teams.append({
+                    "id": tid, "name": name, "code": code, "country": code,
+                    "group": letter, "pot": pot, "fifa_points": fifa,
+                    "engine": eng, "lang": ENGINE_LANG[eng],
+                    "rating": rating, "nodes": _nodes_of(rating),
+                })
+                member_ids.append(tid)
+                tid += 1
+            groups.append(member_ids)
 
         fixtures = []
         pair_order = [(0, 1), (2, 3), (0, 2), (1, 3), (0, 3), (1, 2)]
@@ -131,18 +213,20 @@ class WorldCup:
             for mi, (x, y) in enumerate(pair_order):
                 fixtures.append({"id": f"G{g}M{mi}", "stage": "group", "group": g,
                                  "a": members[x], "b": members[y], "played": False})
-        self.s = {"id": os.urandom(4).hex(), "teams": teams, "groups": groups,
-                  "fixtures": fixtures, "stage": "group", "knockout": [], "champion": None}
+        self.s = {"id": os.urandom(4).hex(), "v": STATE_VERSION,
+                  "teams": teams, "groups": groups, "fixtures": fixtures,
+                  "stage": "group", "knockout": [], "champion": None}
         self._hist = self._load_history()
         return self
 
     # ---------- play a match ----------
-    def _run_game(self, ea, eb, budget, seed1, seed2):
+    def _run_game(self, ea, eb, nodes1, nodes2, seed1, seed2):
         tmp = os.path.join(ROOT, "runs", "_wc_tmp.jsonl")
         argv = [os.path.join(ROOT, "build", "orchestrator"),
                 "--engine1"] + ENGINES[ea] + ["--engine2"] + ENGINES[eb] + [
-                "--games", "1", "--nodes", str(budget), "--log", tmp,
-                "--warmup-ms", "0", "--seed1", str(seed1), "--seed2", str(seed2)]
+                "--games", "1", "--nodes1", str(int(nodes1)), "--nodes2", str(int(nodes2)),
+                "--log", tmp, "--warmup-ms", "0",
+                "--seed1", str(seed1), "--seed2", str(seed2)]
         subprocess.run(argv, cwd=ROOT, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         moves, result = [], None
         for line in open(tmp):
@@ -183,8 +267,12 @@ class WorldCup:
         if not m or m.get("played"):
             return m
         ta, tb = self._team(m["a"]), self._team(m["b"])
-        budget = GROUP_BUDGET if m["stage"] == "group" else KO_BUDGET
-        g = self._run_game(ta["engine"], tb["engine"], budget,
+        # Each side plays at its own FIFA-derived node budget; knockouts get a
+        # ~1.67x deeper think than the group stage.
+        scale = 1.0 if m["stage"] == "group" else (KO_BUDGET / GROUP_BUDGET)
+        n1 = ta["nodes"] * scale
+        n2 = tb["nodes"] * scale
+        g = self._run_game(ta["engine"], tb["engine"], n1, n2,
                            1000 + m["a"], 2000 + m["b"])
         # a = white, b = black.
         if g["result"] == "1-0":
@@ -260,9 +348,13 @@ class WorldCup:
 
     def _make_round(self, teams, name):
         ties = []
+        # Tie ids must be globally unique across rounds. Keying by round size
+        # (32/16/8/4/2) avoids the collision where "Round of 32" and "Round of
+        # 16" both started with "R" and produced duplicate ids like "KR0".
+        rsize = len(teams)
         for i in range(0, len(teams), 2):
             a, b = teams[i], teams[i + 1]
-            ties.append({"id": f"K{name[0]}{i}", "stage": "knockout", "round": name,
+            ties.append({"id": f"K{rsize}_{i}", "stage": "knockout", "round": name,
                          "group": -1, "a": a, "b": b,
                          "seedA": self.s["seed_of"].get(a), "seedB": self.s["seed_of"].get(b),
                          "played": False})
@@ -304,7 +396,7 @@ class WorldCup:
                 out[k] = m[k]
         out["hasGame"] = "game" in m
         if with_odds and not m.get("played"):
-            out["odds"] = self.odds(self._team(m["a"])["engine"], self._team(m["b"])["engine"])
+            out["odds"] = self.odds(self._team(m["a"])["rating"], self._team(m["b"])["rating"])
         return out
 
     def public_state(self):
@@ -346,14 +438,15 @@ class WorldCup:
         h = self._hist.get((ea, eb), {"w": 0, "d": 0, "l": 0})
         n = h["w"] + h["d"] + h["l"]
         w, d, l = self.odds(ea, eb)
-        return {"w": w, "d": d, "l": l, "n": n,
-                "source": "empirical" if n >= 6 else "elo"}
+        # The empirical-history override was removed; odds are always Elo-based
+        # from ratings now. `n` is retained for informational display only.
+        return {"w": w, "d": d, "l": l, "n": n, "source": "elo"}
 
     # --- Monte-Carlo simulation of the rest of the tournament ---
     def _win_prob(self, ta, tb):
         """P(team a beats team b) as a single knockout outcome, draw split by seed
         proxy: use win/(win+loss) normalised, draws resolved to the stronger side."""
-        w, d, l = self.odds(self._team(ta)["engine"], self._team(tb)["engine"])
+        w, d, l = self.odds(self._team(ta)["rating"], self._team(tb)["rating"])
         # In knockouts a draw is decided; give the draw mass to the a-vs-b
         # win/loss split proportionally (a coin weighted by relative strength).
         denom = w + l
@@ -427,7 +520,7 @@ class WorldCup:
                 cf[a] += m.get("capA", 0) - m.get("capB", 0)
                 cf[b] += m.get("capB", 0) - m.get("capA", 0)
             else:
-                w, d, l = self.odds(self._team(a)["engine"], self._team(b)["engine"])
+                w, d, l = self.odds(self._team(a)["rating"], self._team(b)["rating"])
                 r = rng.random()
                 if r < w:
                     pts[a] += 3; cf[a] += 2; cf[b] -= 2
@@ -556,7 +649,76 @@ class WorldCup:
             c["outcome"] = "YES" if (champion in cpp_teams) else "NO"
         out.append(c)
 
+        # ---- real-2026-team contracts (priced straight from simulate) ----
+        by_code = {}
+        for t in teams:
+            by_code.setdefault(t.get("code"), []).append(t["id"])
+        finalists = self._finalists()
+
+        def code_ids(*codes):
+            ids = []
+            for cc in codes:
+                ids += by_code.get(cc, [])
+            return ids
+
+        # 6) Argentina retains the title (reigning 2022 champion).
+        arg = code_ids("AR")
+        if arg:
+            p0 = sum(champ_pct.get(tid, 0) for tid in arg)
+            c = {"id": "argentina-champ", "label": "Argentina retains the title",
+                 "desc": "Resolves YES if Argentina wins the 2026 World Cup.",
+                 "p0": min(0.995, max(0.005, p0)), "status": "open"}
+            if stage == "done":
+                c["status"] = "resolved"
+                c["outcome"] = "YES" if champion in arg else "NO"
+            out.append(c)
+
+        # 7) A team outside pot 1 wins the Cup.
+        non_pot1 = [t["id"] for t in teams if t.get("pot") != 1]
+        p_np1 = sum(champ_pct.get(tid, 0) for tid in non_pot1)
+        c = {"id": "non-pot1-champ", "label": "A team outside pot 1 wins the Cup",
+             "desc": "Resolves YES if the champion was not a pot-1 seed.",
+             "p0": min(0.995, max(0.005, p_np1)), "status": "open"}
+        if stage == "done":
+            c["status"] = "resolved"
+            c["outcome"] = "YES" if (champion in set(non_pot1)) else "NO"
+        out.append(c)
+
+        # 8) A CONMEBOL team wins the Cup.
+        conmebol = code_ids("BR", "AR", "UY", "CO", "EC", "PY")
+        p_con = sum(champ_pct.get(tid, 0) for tid in conmebol)
+        c = {"id": "conmebol-champ", "label": "A CONMEBOL team wins the Cup",
+             "desc": "Resolves YES if a South American (CONMEBOL) side lifts the trophy.",
+             "p0": min(0.995, max(0.005, p_con)), "status": "open"}
+        if stage == "done":
+            c["status"] = "resolved"
+            c["outcome"] = "YES" if (champion in set(conmebol)) else "NO"
+        out.append(c)
+
+        # 9) An all-C++ Final (both finalists backed by a C++ engine).
+        cpp_set = set(cpp_teams)
+        p_final_pair = self._prob_all_cpp_final(cpp_set, sim)
+        c = {"id": "all-cpp-final", "label": "An all-C++ Final",
+             "desc": "Resolves YES if both teams in the Final are backed by a C++ engine.",
+             "p0": min(0.995, max(0.005, p_final_pair)), "status": "open"}
+        if finalists is not None:
+            c["status"] = "resolved"
+            c["outcome"] = "YES" if all(f in cpp_set for f in finalists) else "NO"
+        out.append(c)
+
         return out
+
+    def _prob_all_cpp_final(self, cpp_set, sim):
+        """Rough P(both finalists are in cpp_set). Uses per-team final odds ~ 2x
+        champion odds; assumes the two finalists are drawn near-independently."""
+        finalists = self._finalists()
+        if finalists is not None:
+            return 1.0 if all(f in cpp_set for f in finalists) else 0.0
+        champ_pct = {r["team"]: r["champion_pct"] for r in sim["teams"]}
+        p_cpp_final = sum(min(0.98, 2.0 * champ_pct.get(tid, 0)) for tid in cpp_set)
+        p_cpp_final = min(1.0, p_cpp_final)
+        # two independent finalist slots both C++:
+        return p_cpp_final * p_cpp_final
 
     def _finalists(self):
         """Return [a,b] finalist team ids if the Final tie exists, else None."""
@@ -591,13 +753,18 @@ class WorldCup:
     @classmethod
     def load(cls):
         wc = cls()
+        loaded = None
         if os.path.exists(STATE_FILE):
             with open(STATE_FILE) as f:
-                wc.s = json.load(f)
+                loaded = json.load(f)
+        if loaded is not None and loaded.get("v") == STATE_VERSION:
+            wc.s = loaded
+            wc._hist = cls._load_history()
         else:
+            # Missing state, or an old fake-draw state (v != current): rebuild
+            # the real 2026 draw cleanly and persist it.
             wc.new()
             wc.save()
-        wc._hist = cls._load_history()
         return wc
 
 
@@ -609,19 +776,51 @@ def _count_pieces(fen):
 
 
 if __name__ == "__main__":
-    # quick self-test: draw + play one match
-    wc = WorldCup().new(seed=1)
+    # quick self-test: real draw, calibration, one real orchestrator match.
+    wc = WorldCup().new()  # real draw (no seed) reproduces the drawn groups
     print("teams:", len(wc.s["teams"]), "groups:", len(wc.s["groups"]),
-          "fixtures:", len(wc.s["fixtures"]))
-    m = wc.play("G0M0")
-    print("played G0M0:", m["result"], m["reason"], "plies", m["plies"],
-          "caps", m["capA"], m["capB"], "winner", m["winner"])
-    print("odds sample:", wc.odds("cpp-alphabeta", "random"))
-    wc._hist = WorldCup._load_history()
-    sim = wc.simulate(n=200, seed=1)
-    print("sim top:", sim["teams"][0]["country"], round(sim["teams"][0]["champion_pct"], 3),
-          "sum", round(sum(r["champion_pct"] for r in sim["teams"]), 3))
+          "fixtures:", len(wc.s["fixtures"]), "v:", wc.s["v"])
+    by_code = {t["code"]: t for t in wc.s["teams"]}
+    for code, grp in [("BR", "C"), ("ES", "H"), ("AR", "J"), ("ENG", "L")]:
+        t = by_code[code]
+        assert t["group"] == grp, (code, t["group"], grp)
+        print(f"  {t['name']:14s} grp {t['group']} pot {t['pot']} "
+              f"fifa {t['fifa_points']:7.1f} rating {t['rating']:6.1f} "
+              f"nodes {t['nodes']:5d} eng {t['engine']} ({t['lang']})")
+
+    # calibration: champion probabilities
+    sim = wc.simulate(n=3000, seed=7)
+    print("\n-- top-10 champion probabilities (simulate n=3000) --")
+    for r in sim["teams"][:10]:
+        print(f"  {r['name']:16s} {r['champion_pct']*100:5.1f}%")
+    pct = {r["name"]: r["champion_pct"] for r in sim["teams"]}
+    print("  sum:", round(sum(r["champion_pct"] for r in sim["teams"]), 3))
+    for mnw in ("Haiti", "Curacao", "New Zealand"):
+        print(f"  minnow {mnw}: {pct.get(mnw, 0)*100:.2f}%")
+
+    # favourite vs minnow odds (rating-based)
+    fav = by_code["ES"]["rating"]; minn = by_code["HT"]["rating"]
+    w, d, l = wc.odds(fav, minn)
+    print("odds Spain vs Haiti:", [round(x, 3) for x in (w, d, l)],
+          "-> win share", round(w + d * (w / (w + l)), 3))
+
+    # play one real match through the orchestrator (Brazil vs Haiti, group C).
+    gC = wc.s["groups"][2]  # group C is index 2
+    bid = by_code["BR"]["id"]; hid = by_code["HT"]["id"]
+    mid = None
+    for m in wc.s["fixtures"]:
+        if m["group"] == 2 and {m["a"], m["b"]} == {bid, hid}:
+            mid = m["id"]; break
+    if mid and os.path.exists(os.path.join(ROOT, "build", "orchestrator")):
+        m = wc.play(mid)
+        print("\nplayed", mid, m["result"], m["reason"], "plies", m["plies"],
+              "winner", m["winner"], "(Brazil id", bid, "Haiti id", hid, ")")
+    else:
+        print("\n(orchestrator not built or match not found; skipped live game)")
+
     cs = wc.contracts()
-    print("contracts:", len(cs), "open-with-outcome:",
+    print("\ncontracts:", len(cs), "open-with-outcome:",
           sum(1 for c in cs if c["status"] == "open" and "outcome" in c))
+    for c in cs:
+        print(f"  {c['id']:20s} p0={c['p0']:.3f} {c['status']}")
     print("matrix pairs:", sum(len(v) for v in wc.odds_matrix().values()))
