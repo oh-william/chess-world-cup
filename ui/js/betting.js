@@ -228,14 +228,68 @@
     if (!host) return;
     host.innerHTML = "";
     const pnl = markToModel();
-    const chip = CWC.el("span", "chip");
+    const chip = CWC.el("button", "chip wallet-chip-btn");
+    chip.type = "button";
     const cls = pnl > 0.005 ? "pnl-up" : (pnl < -0.005 ? "pnl-down" : "pnl-flat");
     chip.innerHTML = CWC.icon("coin") +
       " <b class=\"wc-bal\">" + CWC.esc(money2(W.balance)) + "</b>" +
       " <span class=\"wc-pnl " + cls + "\">(" + (pnl >= 0 ? "+" : "") +
-      CWC.esc(money2(pnl)) + ")</span>";
-    chip.title = "Wallet (play money) · P/L marked to the model";
+      CWC.esc(money2(pnl)) + ")</span> <span class=\"wc-caret\">▾</span>";
+    chip.title = "Wallet — click to add funds or reset";
+    chip.addEventListener("click", e => { e.stopPropagation(); walletMenu(chip); });
     host.appendChild(chip);
+  }
+
+  /* ---------------- wallet actions + menu ---------------- */
+  function addFunds(amt) {
+    W.balance = Math.round((W.balance + amt) * 100) / 100;
+    saveWallet(); render();
+    CWC.ui.toast("Added " + money2(amt) + " play money", "ok");
+  }
+  function resetWallet() {
+    W = freshWallet(); saveWallet(); render();
+    CWC.ui.toast("Wallet reset to " + money2(START_BALANCE), "ok");
+  }
+
+  let WM = null;
+  function closeWalletMenu() {
+    if (WM) { WM.remove(); WM = null; }
+    document.removeEventListener("click", onWMDoc, true);
+    document.removeEventListener("keydown", onWMKey, true);
+  }
+  function onWMDoc(e) { if (WM && !WM.contains(e.target)) closeWalletMenu(); }
+  function onWMKey(e) { if (e.key === "Escape") closeWalletMenu(); }
+
+  function walletMenu(anchor) {
+    closeWalletMenu();
+    const pnl = markToModel();
+    WM = CWC.el("div", "wallet-menu team-pop");
+    WM.innerHTML =
+      '<div class="wm-row"><span class="muted">Balance</span>' +
+        '<b class="tnum">' + money2(W.balance) + "</b></div>" +
+      '<div class="wm-row"><span class="muted">P/L</span>' +
+        '<b class="tnum ' + (pnl >= 0 ? "pnl-up" : "pnl-down") + '">' +
+        (pnl >= 0 ? "+" : "") + money2(pnl) + "</b></div>";
+    const acts = CWC.el("div", "wm-acts");
+    [["+ $1,000", 1000], ["+ $10,000", 10000]].forEach(([lbl, amt]) => {
+      const b = CWC.el("button", "btn btn--sm", lbl); b.type = "button";
+      b.addEventListener("click", () => { addFunds(amt); walletMenu(anchor); });
+      acts.appendChild(b);
+    });
+    WM.appendChild(acts);
+    const rst = CWC.el("button", "btn btn--sm btn--danger wm-reset", "Reset to " + money2(START_BALANCE));
+    rst.type = "button";
+    rst.addEventListener("click", () => { resetWallet(); closeWalletMenu(); });
+    WM.appendChild(rst);
+    document.body.appendChild(WM);
+    const r = anchor.getBoundingClientRect();
+    WM.style.position = "fixed";
+    WM.style.top = (r.bottom + 6) + "px";
+    WM.style.right = Math.max(8, window.innerWidth - r.right) + "px";
+    setTimeout(() => {
+      document.addEventListener("click", onWMDoc, true);
+      document.addEventListener("keydown", onWMKey, true);
+    }, 0);
   }
 
   /* ---------------- bet slip drawer (fixture) ---------------- */
@@ -860,15 +914,15 @@
 
   /* --- ledger --- */
   function ledgerPanel() {
-    const reset = CWC.el("button", "btn btn--ghost", "Reset wallet");
+    const controls = CWC.el("div", "ledger-controls");
+    const add = CWC.el("button", "btn btn--sm", "+ $1,000");
+    add.type = "button";
+    add.addEventListener("click", () => addFunds(1000));
+    const reset = CWC.el("button", "btn btn--sm btn--danger", "Reset wallet");
     reset.type = "button";
-    reset.addEventListener("click", () => {
-      if (confirm("Reset wallet to " + money2(START_BALANCE) + "? This clears all bets.")) {
-        W = freshWallet(); saveWallet(); render();
-        CWC.ui.toast("Wallet reset.", "ok");
-      }
-    });
-    const p = panel("Ledger", reset);
+    reset.addEventListener("click", resetWallet);
+    controls.append(add, reset);
+    const p = panel("Ledger", controls);
     if (!W.ledger.length) {
       p.appendChild(CWC.el("p", "muted", "No bets yet."));
       return p;

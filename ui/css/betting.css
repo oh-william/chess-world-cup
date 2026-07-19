@@ -222,3 +222,17 @@
 @media (prefers-reduced-motion: reduce) {
   .ledger tr.flash-win, .ledger tr.flash-loss { animation: none; }
 }
+
+/* clickable wallet chip + dropdown menu */
+.wallet-chip-btn{ cursor:pointer; font:inherit; }
+.wallet-chip-btn:hover{ border-color:var(--line-strong); }
+.wc-caret{ color:var(--dim); font-size:10px; }
+.wallet-menu{ z-index:60; min-width:200px; display:flex; flex-direction:column; gap:var(--s-2);
+  padding:var(--s-3); }
+.wallet-menu .wm-row{ display:flex; justify-content:space-between; align-items:center;
+  font-size:var(--fs-s); }
+.wallet-menu .wm-acts{ display:flex; gap:var(--s-2); }
+.wallet-menu .wm-acts .btn{ flex:1; }
+.wallet-menu .wm-reset{ width:100%; }
+.wallet-menu .pnl-up{ color:var(--green); } .wallet-menu .pnl-down{ color:var(--red); }
+.ledger-controls{ display:flex; gap:var(--s-2); }
