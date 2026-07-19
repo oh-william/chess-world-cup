@@ -92,31 +92,32 @@
 
   // Compact 3-segment micro odds bar + a single dominant label.
   // Near-certain outcomes render the grey ">99%" .odds-cap, never a raw decimal.
-  function microOdds(oddsArr) {
+  // Micro odds bar whose label NAMES the favoured side (team code, or "Draw"),
+  // so it's always clear who the percentage is for. Full W/D/L on hover.
+  function microOdds(oddsArr, m) {
     const [w, d, l] = oddsArr.map(x => Math.max(0, Math.min(1, x)));
     const pc = x => Math.round(x * 100);
+    const a = m && wcTeam(m.a), b = m && wcTeam(m.b);
+    const aName = a ? (a.code || a.name) : "Home", bName = b ? (b.code || b.name) : "Away";
+    const aFull = a ? (a.name || a.code) : "Home", bFull = b ? (b.name || b.code) : "Away";
     const wrap = el("span", "odds--micro-wrap");
+    wrap.title = aFull + " " + pc(w) + "% · Draw " + pc(d) + "% · " + bFull + " " + pc(l) + "%";
     const bar = el("span", "odds--micro");
     bar.setAttribute("role", "img");
-    bar.setAttribute("aria-label",
-      "Odds: win " + pc(w) + "%, draw " + pc(d) + "%, loss " + pc(l) + "%");
+    bar.setAttribute("aria-label", wrap.title);
     bar.innerHTML =
       '<i class="odds-w" style="width:' + pc(w) + '%"></i>' +
       '<i class="odds-d" style="width:' + pc(d) + '%"></i>' +
       '<i class="odds-l" style="width:' + pc(l) + '%"></i>';
     wrap.appendChild(bar);
 
-    // dominant outcome label
+    // dominant outcome, labelled by the actual team (or Draw)
     const idx = w >= d && w >= l ? 0 : (l >= d ? 2 : 1);
     const p = [w, d, l][idx];
-    const tag = ["1", "X", "2"][idx];
+    const tag = [aName, "Draw", bName][idx];
     const lbl = el("span", "odds--micro-lbl tnum");
-    if (p >= 0.99) {
-      lbl.className = "odds-cap tnum";
-      lbl.textContent = tag + " >99%";
-    } else {
-      lbl.textContent = tag + " " + Math.round(p * 100) + "%";
-    }
+    if (p >= 0.99) { lbl.className = "odds-cap tnum"; lbl.textContent = tag + " >99%"; }
+    else lbl.textContent = tag + " " + pc(p) + "%";
     wrap.appendChild(lbl);
     return wrap;
   }
@@ -291,7 +292,7 @@
     const vs = el("div", "bc-motd-vs");
     vs.appendChild(teamChip(a, { label: a ? (a.name || a.code) : "?" }));
     const mid = el("span", "bc-motd-mid");
-    mid.appendChild(microOdds(CWC.betting.oddsFor(m)));
+    mid.appendChild(microOdds(CWC.betting.oddsFor(m), m));
     vs.appendChild(mid);
     vs.appendChild(teamChip(b, { label: b ? (b.name || b.code) : "?" }));
     card.appendChild(vs);
@@ -363,8 +364,64 @@
     draw.addEventListener("click", () => { if (!T.autofill) wcReset(); });
     actions.appendChild(draw);
 
+    const cog = el("button", "btn btn--ghost", "");
+    cog.type = "button";
+    cog.title = "Think time per stage";
+    cog.innerHTML = CWC.icon("pulse") + " Think time";
+    cog.addEventListener("click", openThinkTime);
+    actions.appendChild(cog);
+
     bar.appendChild(actions);
     return bar;
+  }
+
+  // Settings: per-stage think-time multiplier (later rounds search deeper).
+  async function openThinkTime() {
+    let cfg;
+    try { cfg = await CWC.api.get("/api/tournament/config"); }
+    catch (e) { CWC.ui.toast("Think-time needs the live server", "warn"); return; }
+    const dlg = document.createElement("dialog");
+    dlg.className = "modal tt-modal";
+    const body = el("div", "modal-body");
+    body.innerHTML = '<p class="muted" style="margin-top:0">How long each side thinks '
+      + '(× its FIFA-based budget). Later rounds go deeper for higher-quality games.</p>';
+    const grid = el("div", "tt-grid");
+    const inputs = {};
+    cfg.stages.forEach(st => {
+      const row = el("label", "tt-row");
+      const nm = st === "group" ? "Group stage" : st;
+      row.appendChild(el("span", "tt-name", nm));
+      const inp = document.createElement("input");
+      inp.type = "number"; inp.min = "0.25"; inp.max = "20"; inp.step = "0.25";
+      inp.value = String(cfg.stage_mult[st]); inp.className = "tt-input tnum";
+      inputs[st] = inp; row.appendChild(inp);
+      const approx = el("span", "tt-approx tnum muted");
+      approx.textContent = "~" + CWC.fmt.num(cfg.approx_nodes[st]) + " nodes";
+      inp.addEventListener("input", () => {
+        approx.textContent = "~" + CWC.fmt.num(Math.round(cfg.approx_nodes[st] / cfg.stage_mult[st] * (+inp.value || 0))) + " nodes";
+      });
+      row.appendChild(approx);
+      grid.appendChild(row);
+    });
+    body.appendChild(grid);
+    const foot = el("div", "tt-foot");
+    const save = el("button", "btn btn--primary", "Save");
+    save.addEventListener("click", async () => {
+      const sm = {}; Object.keys(inputs).forEach(k => sm[k] = +inputs[k].value);
+      await CWC.api.post("/api/tournament/config", { stage_mult: sm });
+      CWC.ui.toast("Think-time updated", "ok"); dlg.close();
+    });
+    const cancel = el("button", "btn btn--ghost", "Cancel");
+    cancel.addEventListener("click", () => dlg.close());
+    foot.append(cancel, save); body.appendChild(foot);
+    const head = el("div", "modal-head");
+    head.innerHTML = "<span>Think time per stage</span>";
+    const x = el("button", "modal-close", ""); x.innerHTML = CWC.icon("close");
+    x.addEventListener("click", () => dlg.close()); head.appendChild(x);
+    dlg.append(head, body);
+    document.body.appendChild(dlg);
+    dlg.addEventListener("close", () => dlg.remove());
+    dlg.showModal();
   }
 
   async function playAllRemaining() {
@@ -489,7 +546,7 @@
     } else {
       row.appendChild(left);
       const mid = el("span", "fx-mid");
-      mid.appendChild(microOdds(CWC.betting.oddsFor(m)));
+      mid.appendChild(microOdds(CWC.betting.oddsFor(m), m));
       row.appendChild(mid);
       row.appendChild(right);
 

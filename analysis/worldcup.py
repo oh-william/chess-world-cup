@@ -39,6 +39,14 @@ STATE_VERSION = 2     # bump to force a clean rebuild of persisted state
 
 GROUP_LETTERS = "ABCDEFGHIJKL"
 
+# Per-stage "think time": a multiplier on each team's FIFA-derived base node
+# budget. Later rounds think longer -> deeper, higher-quality games. Runtime-
+# configurable via get_config()/set_config() and the UI settings panel.
+STAGE_ORDER = ["group", "Round of 32", "Round of 16", "Quarterfinals",
+               "Semifinals", "Final"]
+STAGE_MULT = {"group": 1.0, "Round of 32": 1.5, "Round of 16": 2.0,
+              "Quarterfinals": 2.5, "Semifinals": 3.0, "Final": 4.0}
+
 # language "flavour" by pot (cycles deterministically; rating is independent
 # of engine). Pot 1 gets the strongest search engines, pot 4 the weakest.
 POT_ENGINES = {
@@ -216,9 +224,28 @@ class WorldCup:
                                  "a": members[x], "b": members[y], "played": False})
         self.s = {"id": os.urandom(4).hex(), "v": STATE_VERSION,
                   "teams": teams, "groups": groups, "fixtures": fixtures,
-                  "stage": "group", "knockout": [], "champion": None}
+                  "stage": "group", "knockout": [], "champion": None,
+                  "stage_mult": dict(STAGE_MULT)}
         self._hist = self._load_history()
         return self
+
+    def get_config(self):
+        """Per-stage think-time multipliers (approx. nodes at the average team)."""
+        sm = self.s.get("stage_mult", dict(STAGE_MULT))
+        base = _nodes_of(_rating_of(1600))  # a mid-table side's base budget
+        return {"stages": STAGE_ORDER,
+                "stage_mult": {k: sm.get(k, STAGE_MULT[k]) for k in STAGE_ORDER},
+                "approx_nodes": {k: int(base * sm.get(k, STAGE_MULT[k])) for k in STAGE_ORDER}}
+
+    def set_config(self, cfg):
+        sm = self.s.setdefault("stage_mult", dict(STAGE_MULT))
+        for k, v in (cfg.get("stage_mult") or {}).items():
+            if k in STAGE_MULT:
+                try:
+                    sm[k] = max(0.25, min(20.0, float(v)))
+                except (TypeError, ValueError):
+                    pass
+        return self.get_config()
 
     # ---------- play a match ----------
     def _run_game(self, ea, eb, nodes1, nodes2, seed1, seed2):
@@ -268,9 +295,10 @@ class WorldCup:
         if not m or m.get("played"):
             return m
         ta, tb = self._team(m["a"]), self._team(m["b"])
-        # Each side plays at its own FIFA-derived node budget; knockouts get a
-        # ~1.67x deeper think than the group stage.
-        scale = 1.0 if m["stage"] == "group" else (KO_BUDGET / GROUP_BUDGET)
+        # Each side plays at its own FIFA-derived node budget, scaled by the
+        # configurable per-stage think-time multiplier (later rounds go deeper).
+        stage_key = "group" if m["stage"] == "group" else m.get("round", "Round of 32")
+        scale = self.s.get("stage_mult", STAGE_MULT).get(stage_key, 1.0)
         n1 = ta["nodes"] * scale
         n2 = tb["nodes"] * scale
         g = self._run_game(ta["engine"], tb["engine"], n1, n2,

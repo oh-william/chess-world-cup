@@ -210,6 +210,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             if action == "reset":
                 WC.new(req.get("seed")); WC.save()
                 return self._json({"ok": True, "state": WC.public_state()})
+            if action == "config":
+                cfg = WC.set_config(req); WC.save()
+                return self._json({"ok": True, "config": cfg})
         self.send_error(404)
 
     def do_GET(self):
@@ -227,6 +230,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         if self.path == "/api/tournament":
             with WC_LOCK:
                 return self._json(WC.public_state())
+        if self.path == "/api/tournament/config":
+            with WC_LOCK:
+                return self._json(WC.get_config())
         if self.path.startswith("/api/tournament/game"):
             qs = parse_qs(urlparse(self.path).query)
             with WC_LOCK:
