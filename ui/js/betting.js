@@ -906,10 +906,24 @@
       co.addEventListener("click", () => cashOutContract(e));
       row.appendChild(co);
     } else {
-      const note = CWC.el("div", "pos-note muted", "settles at match time — no cash-out on fixed odds");
-      row.appendChild(note);
+      const foot = CWC.el("div", "pos-foot");
+      foot.appendChild(CWC.el("span", "pos-note muted", "settles at match time"));
+      const cancel = CWC.el("button", "btn btn--sm btn--ghost", "Cancel & refund");
+      cancel.type = "button";
+      cancel.addEventListener("click", () => cancelBet(e));
+      foot.appendChild(cancel);
+      row.appendChild(foot);
     }
     return row;
+  }
+
+  // Undo a not-yet-settled fixed-odds bet (fixture or parlay): refund the stake.
+  function cancelBet(e) {
+    if (e.status !== "open" || e.kind === "contract") return;
+    W.balance = Math.round((W.balance + e.stake) * 100) / 100;
+    e.status = "cancelled"; e.payout = 0;
+    saveWallet(); render();
+    CWC.ui.toast("Bet cancelled · " + money2(e.stake) + " refunded", "ok");
   }
 
   /* --- ledger --- */
