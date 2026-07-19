@@ -134,6 +134,43 @@ std::string Board::fen() const {
     return ss.str();
 }
 
+namespace {
+// Fixed Zobrist keys, generated once from a deterministic PRNG.
+struct Zobrist {
+    uint64_t piece[COLOR_NB][PIECE_TYPE_NB][SQUARE_NB];
+    uint64_t side;
+    uint64_t castling[16];
+    uint64_t ep_file[8];
+    Zobrist() {
+        uint64_t s = 0x9E3779B97F4A7C15ULL;
+        auto next = [&]() {
+            s ^= s >> 12; s ^= s << 25; s ^= s >> 27;
+            return s * 0x2545F4914F6CDD1DULL;
+        };
+        for (int c = 0; c < COLOR_NB; ++c)
+            for (int p = 0; p < PIECE_TYPE_NB; ++p)
+                for (int sq = 0; sq < SQUARE_NB; ++sq) piece[c][p][sq] = next();
+        side = next();
+        for (int i = 0; i < 16; ++i) castling[i] = next();
+        for (int i = 0; i < 8; ++i) ep_file[i] = next();
+    }
+};
+const Zobrist ZOB;
+} // namespace
+
+uint64_t Board::hash() const {
+    uint64_t h = 0;
+    for (int c = 0; c < COLOR_NB; ++c)
+        for (int p = 0; p < PIECE_TYPE_NB; ++p) {
+            Bitboard b = pieces_[c][p];
+            while (b) h ^= ZOB.piece[c][p][pop_lsb(b)];
+        }
+    if (stm_ == BLACK) h ^= ZOB.side;
+    h ^= ZOB.castling[castling_ & 15];
+    if (ep_ != NO_SQUARE) h ^= ZOB.ep_file[file_of(ep_)];
+    return h;
+}
+
 bool Board::insufficient_material() const {
     // Any pawn, rook, or queen means mate is still possible.
     for (int c = 0; c < COLOR_NB; ++c)

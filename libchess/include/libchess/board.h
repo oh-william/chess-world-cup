@@ -39,6 +39,10 @@ public:
 
     bool in_check() const { return is_attacked(king_sq(stm_), ~stm_); }
 
+    // Zobrist hash of the full position (placement + side + castling + ep file),
+    // computed from scratch. For transposition tables in a search.
+    uint64_t hash() const;
+
     // True for K vs K, K+minor vs K, and K+B vs K+B with same-colored bishops.
     // A conservative subset of the FIDE "impossibility of checkmate" rule.
     bool insufficient_material() const;

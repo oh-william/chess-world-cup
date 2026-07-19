@@ -38,6 +38,11 @@ add_executable(cpp-greedy bots/cpp-greedy/greedy.cpp)
 target_include_directories(cpp-greedy PRIVATE bots/cpp-alphabeta) # shares eval.h
 target_link_libraries(cpp-greedy PRIVATE shim_cpp)
 
+# Reference analysis engine (strong; not a tournament bot). Own UCI loop.
+add_executable(cpp-analyst bots/cpp-analyst/analyst.cpp)
+target_include_directories(cpp-analyst PRIVATE bots/cpp-alphabeta) # shares eval.h
+target_link_libraries(cpp-analyst PRIVATE libchess)
+
 # Orchestrator.
 add_executable(orchestrator orchestrator/orchestrator.cpp orchestrator/process.cpp)
 target_link_libraries(orchestrator PRIVATE libchess)

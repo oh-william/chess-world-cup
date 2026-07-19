@@ -117,6 +117,38 @@
     W.dom.evalBar.classList.toggle("is-black-ahead", diff < 0);
   }
 
+  // Ask the strong reference engine (cpp-analyst, live server only) to evaluate
+  // the current position, and upgrade the eval bar + show its best line.
+  function analyzeCurrent(fen) {
+    const line = W.dom && W.dom.engineLine;
+    if (!CWC.state.live) { if (line) line.textContent = ""; return; }
+    if (line) line.textContent = "analysing…";
+    const seq = (W.analyzeSeq = (W.analyzeSeq || 0) + 1);
+    CWC.api.get("/api/analyze?fen=" + encodeURIComponent(fen) + "&nodes=200000")
+      .then(res => {
+        if (seq !== W.analyzeSeq || !W.dom) return;      // superseded
+        if (res && res.cp != null) applyEngineEval(fen, res);
+        else if (line) line.textContent = "";
+      })
+      .catch(() => { if (line) line.textContent = ""; });
+  }
+
+  function applyEngineEval(fen, res) {
+    const cp = Math.max(-2000, Math.min(2000, res.cp));
+    const wp = 1 / (1 + Math.pow(10, -cp / 400));        // win probability
+    W.dom.evalWhite.style.height = (wp * 100).toFixed(1) + "%";
+    W.dom.evalBar.classList.toggle("is-black-ahead", cp < 0);
+    const pawns = (res.cp / 100).toFixed(1);
+    const signed = res.cp > 0 ? "+" + pawns : pawns;
+    W.dom.evalLabel.textContent = signed;
+    W.dom.evalBar.setAttribute("aria-label", "engine evaluation " + signed);
+    const best = res.best && res.best !== "0000"
+      ? (CWC.san(fen, res.best) || res.best) : "—";
+    W.dom.engineLine.innerHTML =
+      'engine <span class="tnum">d' + (res.depth || "?") + "</span> · best <b>" +
+      CWC.esc(best) + '</b> <span class="tnum">' + signed + "</span>";
+  }
+
   // Last-5 form for an engine across an event's games (chronological), newest last.
   function eventForm(ev, engineName) {
     if (!ev || !ev.games || !engineName) return [];
@@ -330,6 +362,10 @@
     plateBot.appendChild(plateBotInfo); plateBot.appendChild(plateBotMat);
     boardCol.appendChild(plateBot);
 
+    // engine analysis line (populated on the live server by cpp-analyst)
+    const engineLine = el("div", "w-engine muted");
+    boardCol.appendChild(engineLine);
+
     // transport (hidden in live)
     const transport = el("div", "w-transport");
     if (mode === "live") transport.classList.add("is-hidden");
@@ -376,7 +412,7 @@
 
     W.dom = {
       boardCol, plateTopInfo, plateTopMat, plateBotInfo, plateBotMat,
-      boardEl, evalBar, evalWhite, evalLabel,
+      boardEl, evalBar, evalWhite, evalLabel, engineLine,
       transport, bFirst, bPrev, bPlay, bNext, bLast, scrub, plyLabel, speedSel,
       ctxCol,
     };
@@ -580,8 +616,9 @@
     const fen = W.rp.positions[W.rp.i];
     const mv = W.rp.i > 0 ? W.rp.moves[W.rp.i - 1] : null;
     CWC.board.render(W.dom.boardEl, fen, { lastMove: mv ? mv.uci : null, coords: true });
-    // eval bar (material diff — always populated)
+    // eval bar (material diff — always populated); engine upgrades it if live
     renderEval(fen);
+    analyzeCurrent(fen);
     // material into plates
     W.dom.plateTopMat.innerHTML = materialHTML(fen, false); // black's captures
     W.dom.plateBotMat.innerHTML = materialHTML(fen, true);  // white's captures

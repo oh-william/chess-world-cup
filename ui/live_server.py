@@ -51,6 +51,49 @@ ENGINE_META = {
 }
 
 STATE = {"proc": None, "cfg": {}, "gen": 0, "lock": threading.Lock()}
+ANALYST = os.path.join(ROOT, "build", "cpp-analyst")
+_ANALYZE_CACHE = {}
+
+
+def analyze_fen(fen, nodes=300000):
+    """Run the strong reference engine on a position; return a white-relative
+    eval (centipawns), best move, PV and depth. Cached by (fen, nodes)."""
+    keyc = (fen, nodes)
+    if keyc in _ANALYZE_CACHE:
+        return _ANALYZE_CACHE[keyc]
+    cmd = f"uci\nposition fen {fen}\ngo nodes {nodes}\nquit\n"
+    out = ""
+    try:
+        out = subprocess.run(ANALYST, input=cmd, capture_output=True, text=True,
+                             cwd=ROOT, timeout=15).stdout
+    except Exception:
+        pass
+    cp = depth = None
+    pv = ""
+    best = "0000"
+    for line in out.splitlines():
+        if line.startswith("info") and " score cp " in line:
+            t = line.split()
+            for i, tok in enumerate(t):
+                if tok == "cp":
+                    cp = int(t[i + 1])
+                elif tok == "depth":
+                    depth = int(t[i + 1])
+            j = line.find(" pv ")
+            pv = line[j + 4:].strip() if j >= 0 else ""
+        elif line.startswith("bestmove"):
+            parts = line.split()
+            if len(parts) >= 2:
+                best = parts[1]
+    stm_white = (fen.split(" ")[1:2] or ["w"])[0] == "w"
+    cp_white = None if cp is None else (cp if stm_white else -cp)
+    res = {"cp": cp_white, "stm_cp": cp, "best": best, "pv": pv.split() if pv else [],
+           "depth": depth, "nodes": nodes}
+    if len(_ANALYZE_CACHE) < 4000:
+        _ANALYZE_CACHE[keyc] = res
+    return res
+
+
 GROUP_JSONL = os.path.join(ROOT, "runs", "group.jsonl")
 BRACKET_LOG = os.path.join(ROOT, "runs", "bracket_live.jsonl")
 BSTATE = {"proc": None, "gen": 0, "lock": threading.Lock()}
@@ -233,6 +276,13 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         if self.path == "/api/tournament/config":
             with WC_LOCK:
                 return self._json(WC.get_config())
+        if self.path.startswith("/api/analyze"):
+            qs = parse_qs(urlparse(self.path).query)
+            fen = (qs.get("fen") or [""])[0]
+            nodes = int((qs.get("nodes") or ["300000"])[0])
+            if not fen:
+                return self._json({"error": "fen required"}, 400)
+            return self._json(analyze_fen(fen, nodes))
         if self.path.startswith("/api/tournament/game"):
             qs = parse_qs(urlparse(self.path).query)
             with WC_LOCK:
