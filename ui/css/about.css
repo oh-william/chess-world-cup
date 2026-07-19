@@ -1,0 +1,34 @@
+/* about.css — the Engines page */
+.about-intro{ max-width:900px; margin:0 auto var(--s-6); }
+.about-intro h1{ font-family:var(--font-display); font-size:var(--fs-3xl); margin:0 0 var(--s-2); }
+.about-intro > p{ color:var(--ink-2); font-size:var(--fs-l); line-height:var(--lh-body); }
+.about-intro .accent{ color:var(--accent); }
+.about-families{ display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr));
+  gap:var(--s-3); margin-top:var(--s-5); }
+.fam-note{ background:var(--surface); border:1px solid var(--line); border-radius:var(--r-m);
+  padding:var(--s-3); }
+.fam-note h3{ margin:0 0 var(--s-1); font-size:var(--fs-m); }
+.fam-note p{ margin:0; color:var(--dim); font-size:var(--fs-xs); line-height:var(--lh-body); }
+.fam-note em{ color:var(--ink-2); font-style:normal; }
+
+.eng-grid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(340px,1fr));
+  gap:var(--s-4); max-width:1200px; margin:0 auto; }
+.eng-card{ background:var(--surface); border:1px solid var(--line); border-radius:var(--r-l);
+  padding:var(--s-4); display:flex; flex-direction:column; gap:var(--s-2); }
+.eng-card--oracle{ border-color:var(--accent); box-shadow:var(--gold-glow); }
+.eng-head{ display:flex; align-items:flex-start; justify-content:space-between; gap:var(--s-2); }
+.eng-title{ display:flex; flex-direction:column; }
+.eng-nick{ font-family:var(--font-display); font-size:var(--fs-l); font-weight:700; }
+.eng-name{ color:var(--dim); font-size:var(--fs-xs); font-family:var(--mono); }
+.eng-algo{ font-size:var(--fs-s); }
+.eng-blurb{ margin:0; color:var(--ink-2); font-size:var(--fs-s); line-height:var(--lh-body); }
+.eng-techs{ display:flex; flex-wrap:wrap; gap:4px; }
+.eng-tech{ font-size:11px; color:var(--dim); background:var(--surface-2);
+  border:1px solid var(--line); border-radius:var(--r-pill); padding:1px var(--s-2); }
+.eng-foot{ display:flex; align-items:center; justify-content:space-between; gap:var(--s-2);
+  margin-top:auto; padding-top:var(--s-2); border-top:1px solid var(--line);
+  font-size:var(--fs-xs); }
+.eng-strength{ display:inline-flex; gap:3px; }
+.eng-strength i{ width:8px; height:8px; border-radius:50%; background:var(--line-strong); }
+.eng-strength i.on{ background:var(--accent); }
+.eng-teams{ font-size:11px; line-height:1.5; }

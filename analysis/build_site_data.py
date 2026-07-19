@@ -264,6 +264,11 @@ def build_odds_contracts(out):
             out["contracts"] = wc.contracts()
         except Exception as e:
             print(f"warning: contracts block skipped ({e})", file=sys.stderr)
+    if hasattr(wc, "get_engines"):
+        try:
+            out["engine_info"] = wc.get_engines()["engines"]
+        except Exception as e:
+            print(f"warning: engine_info block skipped ({e})", file=sys.stderr)
 
 
 def main():

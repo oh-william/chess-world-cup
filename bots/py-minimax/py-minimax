@@ -1,0 +1,55 @@
+#!/usr/bin/env python3
+"""py-minimax — plain minimax, NO alpha-beta pruning. It visits every node of the
+game tree to a fixed depth: the honest, naive baseline that shows exactly why
+pruning exists (alpha-beta reaches the same move examining a fraction of the
+nodes). Distinct algorithm, deliberately un-optimised. Uses the shared C-ABI core.
+"""
+import os
+import sys
+
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+    "shim", "py"))
+import shim  # noqa: E402
+
+INF = 10**9
+MATE = 30000
+DEPTH = 3  # shallow: with no pruning the node count explodes with depth
+
+
+def minimax(board, depth, nodes):
+    if depth == 0:
+        return board.eval(), nodes            # side-to-move relative
+    moves = board.legal_moves()
+    if not moves:
+        return (-MATE if board.in_check() else 0), nodes
+    best = -INF
+    for m in moves:
+        board.make(m)
+        s, nodes = minimax(board, depth - 1, nodes + 1)
+        board.unmake(m)
+        if -s > best:
+            best = -s
+    return best, nodes
+
+
+def search(board, limits):
+    moves = board.legal_moves()
+    if not moves:
+        return 0, 0
+    best, best_move, nodes = -INF, moves[0], 0
+    for m in moves:
+        board.make(m)
+        s, nodes = minimax(board, DEPTH - 1, nodes + 1)
+        board.unmake(m)
+        if -s > best:
+            best, best_move = -s, m
+    return best_move, nodes
+
+
+def meta():
+    return {"name": "py-minimax", "lang": "Python", "family": "minimax", "country": "XX"}
+
+
+if __name__ == "__main__":
+    sys.exit(shim.run(meta, search))

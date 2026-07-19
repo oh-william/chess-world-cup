@@ -52,8 +52,8 @@ STAGE_MULT = {"group": 1.0, "Round of 32": 1.5, "Round of 16": 2.0,
 POT_ENGINES = {
     1: ["cpp-alphabeta", "rs-alphabeta", "js-alphabeta", "py-alphabeta"],
     2: ["cpp-alphabeta", "rs-alphabeta", "js-alphabeta", "py-mcts"],
-    3: ["js-alphabeta", "py-mcts", "cpp-greedy"],
-    4: ["py-mcts", "cpp-greedy", "py-greedy", "random"],
+    3: ["js-alphabeta", "py-mcts", "py-minimax", "cpp-greedy"],
+    4: ["py-minimax", "cpp-greedy", "py-greedy", "random"],
 }
 
 
@@ -74,13 +74,85 @@ ENGINES = {
     "py-alphabeta":  [os.path.join(ROOT, "bots", "py-alphabeta", "py-alphabeta")],
     "py-mcts":       [os.path.join(ROOT, "bots", "py-mcts", "py-mcts")],
     "py-greedy":     [os.path.join(ROOT, "bots", "py-greedy", "py-greedy")],
+    "py-minimax":    [os.path.join(ROOT, "bots", "py-minimax", "py-minimax")],
 }
 ENGINE_LANG = {"cpp-alphabeta": "C++", "rs-alphabeta": "Rust", "js-alphabeta": "JavaScript",
                "py-alphabeta": "Python", "py-mcts": "Python", "cpp-greedy": "C++",
-               "py-greedy": "Python", "random": "C++"}
+               "py-greedy": "Python", "random": "C++", "py-minimax": "Python"}
 ENGINE_RATING = {"cpp-alphabeta": 1820, "rs-alphabeta": 1810, "js-alphabeta": 1800,
-                 "py-alphabeta": 1790, "py-mcts": 1450, "random": 1150,
-                 "cpp-greedy": 1080, "py-greedy": 1070}
+                 "py-alphabeta": 1790, "py-mcts": 1450, "py-minimax": 1300,
+                 "random": 1150, "cpp-greedy": 1080, "py-greedy": 1070}
+
+# Rich profiles for the About page — each engine's language, algorithm, the
+# techniques it uses, an honest strength note, and a bit of flair.
+ENGINE_INFO = {
+    "cpp-alphabeta": {"nick": "The Machine", "lang": "C++", "algorithm": "Alpha-Beta",
+        "reuse": "native", "strength": 4,
+        "techniques": ["iterative deepening", "quiescence search", "MVV-LVA ordering",
+                       "handcrafted eval (material + piece-square tables)"],
+        "blurb": "Classical alpha-beta minimax with pruning, compiled straight to the "
+                 "metal. The speed pole of the field: whatever the algorithm can do per "
+                 "node, C++ does it fastest."},
+    "rs-alphabeta": {"nick": "The Engineer", "lang": "Rust", "algorithm": "Alpha-Beta",
+        "reuse": "C-ABI FFI", "strength": 4,
+        "techniques": ["identical search to cpp-alphabeta", "native FFI to libchess",
+                       "memory-safe, zero-cost abstractions"],
+        "blurb": "The exact same alpha-beta, written in Rust and calling the C core over "
+                 "FFI. Memory-safe and within a hair of C++ speed — proof the tax is about "
+                 "the language runtime, not the algorithm."},
+    "js-alphabeta": {"nick": "The Upstart", "lang": "JavaScript", "algorithm": "Alpha-Beta",
+        "reuse": "WebAssembly", "strength": 3,
+        "techniques": ["same alpha-beta in Node.js", "movegen compiled to WASM",
+                       "JIT-compiled search loop"],
+        "blurb": "Alpha-beta in Node.js, with the perft-clean movegen compiled to "
+                 "WebAssembly. The hot path runs in WASM, so the web platform hangs "
+                 "surprisingly close to the compiled pack."},
+    "py-alphabeta": {"nick": "The Purist", "lang": "Python", "algorithm": "Alpha-Beta",
+        "reuse": "ctypes FFI", "strength": 3,
+        "techniques": ["same alpha-beta in pure Python", "ctypes calls into libchess",
+                       "readable, ~120 lines"],
+        "blurb": "The same search again, in clean idiomatic Python via ctypes. Elegant and "
+                 "easy to read — and it pays the full interpreter tax, ~20-30x fewer "
+                 "nodes/sec than C++. The headline of the whole experiment."},
+    "py-mcts": {"nick": "The Gambler", "lang": "Python", "algorithm": "Monte-Carlo Tree Search",
+        "reuse": "ctypes FFI", "strength": 2,
+        "techniques": ["UCT selection (exploration vs exploitation)", "tree expansion",
+                       "eval-guided playouts", "no brute-force minimax"],
+        "blurb": "A completely different paradigm: instead of exhaustively pruning a tree, "
+                 "it grows one by sampling promising lines (UCT) and backing up the "
+                 "results. The knowledge pole — it must win on Elo-per-node, not raw speed."},
+    "py-minimax": {"nick": "The Naive", "lang": "Python", "algorithm": "Minimax (no pruning)",
+        "reuse": "ctypes FFI", "strength": 1,
+        "techniques": ["plain minimax to fixed depth", "NO alpha-beta pruning",
+                       "visits every node"],
+        "blurb": "Textbook minimax with the pruning switched OFF — it dutifully visits "
+                 "every branch to its depth. It exists to show why alpha-beta matters: the "
+                 "same move, at a fraction of the work, once you prune."},
+    "cpp-greedy": {"nick": "The Brute", "lang": "C++", "algorithm": "Depth-1 Greedy",
+        "reuse": "native", "strength": 1,
+        "techniques": ["evaluate every reply", "grab the best-eval move", "no lookahead"],
+        "blurb": "One ply deep: it plays whatever move maximises the eval right now, with "
+                 "zero foresight. Fast, shallow, and easily out-planned — but it'll punish "
+                 "a free piece instantly."},
+    "py-greedy": {"nick": "The Impatient", "lang": "Python", "algorithm": "Depth-1 Greedy",
+        "reuse": "ctypes FFI", "strength": 1,
+        "techniques": ["same greedy rule in Python", "one-ply eval scan"],
+        "blurb": "Depth-1 greedy, Python edition. The lightest search there is short of "
+                 "not searching at all."},
+    "random": {"nick": "The Wildcard", "lang": "C++", "algorithm": "Uniform Random",
+        "reuse": "native", "strength": 0,
+        "techniques": ["pick a uniform-random legal move", "seeded RNG"],
+        "blurb": "No evaluation, no search — a uniform-random legal move. The Elo anchor of "
+                 "the tournament and the protocol canary: if anything speaks UCI, it's this."},
+    "cpp-analyst": {"nick": "The Oracle", "lang": "C++", "algorithm": "Alpha-Beta + TT + PVS",
+        "reuse": "native", "strength": 5, "role": "analysis",
+        "techniques": ["transposition table (Zobrist)", "principal variation search",
+                       "killer + history heuristics", "iterative deepening + quiescence"],
+        "blurb": "Not a competitor — the reference analyst. It runs the strongest search in "
+                 "the project (alpha-beta with a transposition table and PVS) at a high "
+                 "budget, so its evaluation and best line are the ground truth used to "
+                 "annotate every game in the Watch view."},
+}
 # 48 slots: 16 alpha-beta (strong), 8 mcts, 8 random, 16 greedy (spread across pots).
 SLOT_ENGINES = (["cpp-alphabeta", "rs-alphabeta", "js-alphabeta", "py-alphabeta"] * 4
                 + ["py-mcts"] * 8 + ["random"] * 8
@@ -236,6 +308,19 @@ class WorldCup:
         return {"stages": STAGE_ORDER,
                 "stage_mult": {k: sm.get(k, STAGE_MULT[k]) for k in STAGE_ORDER},
                 "approx_nodes": {k: int(base * sm.get(k, STAGE_MULT[k])) for k in STAGE_ORDER}}
+
+    def get_engines(self):
+        """Engine profiles for the About page, enriched with which teams each backs."""
+        by_engine = {}
+        for t in self.s.get("teams", []):
+            by_engine.setdefault(t["engine"], []).append({"name": t["name"], "code": t["code"]})
+        out = []
+        for name, info in ENGINE_INFO.items():
+            e = dict(info); e["name"] = name
+            e["teams"] = by_engine.get(name, [])
+            e["team_count"] = len(e["teams"])
+            out.append(e)
+        return {"engines": out}
 
     def set_config(self, cfg):
         sm = self.s.setdefault("stage_mult", dict(STAGE_MULT))

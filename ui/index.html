@@ -12,6 +12,7 @@
 <link rel="stylesheet" href="css/watch.css">
 <link rel="stylesheet" href="css/betting.css">
 <link rel="stylesheet" href="css/analysis.css">
+<link rel="stylesheet" href="css/about.css">
 </head>
 <body>
 
@@ -71,6 +72,9 @@
     <button class="tab" role="tab" data-view="analysis" id="tab-analysis"
       aria-selected="false" aria-controls="view-analysis" tabindex="-1">
       <svg class="ico" aria-hidden="true"><use href="#i-chart"></use></svg>Analysis</button>
+    <button class="tab" role="tab" data-view="about" id="tab-about"
+      aria-selected="false" aria-controls="view-about" tabindex="-1">
+      <svg class="ico" aria-hidden="true"><use href="#i-flag-fallback"></use></svg>Engines</button>
   </nav>
 
   <div class="header-right">
@@ -84,6 +88,7 @@
   <section id="view-watch" class="view" role="tabpanel" aria-labelledby="tab-watch"></section>
   <section id="view-betting" class="view" role="tabpanel" aria-labelledby="tab-betting"></section>
   <section id="view-analysis" class="view" role="tabpanel" aria-labelledby="tab-analysis"></section>
+  <section id="view-about" class="view" role="tabpanel" aria-labelledby="tab-about"></section>
 </main>
 
 <div id="result-ticker" class="result-ticker" aria-live="off"><!-- populated by another stream --></div>
@@ -101,6 +106,7 @@
 <script src="js/tournament.js"></script>
 <script src="js/watch.js"></script>
 <script src="js/analysis.js"></script>
+<script src="js/about.js"></script>
 <script src="js/boot.js"></script>
 </body>
 </html>

@@ -77,7 +77,7 @@
 
   /* ---------- view registry + router ---------- */
   const VIEWS = Object.create(null);  // id -> {init,show,hide,_inited,_el}
-  const VALID = ["tournament", "watch", "betting", "analysis"];
+  const VALID = ["tournament", "watch", "betting", "analysis", "about"];
 
   CWC.registerView = function (id, impl) {
     if (VALID.indexOf(id) < 0) { console.warn("registerView: unknown id " + id); return; }

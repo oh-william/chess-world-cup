@@ -276,6 +276,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         if self.path == "/api/tournament/config":
             with WC_LOCK:
                 return self._json(WC.get_config())
+        if self.path == "/api/engines":
+            with WC_LOCK:
+                return self._json(WC.get_engines())
         if self.path.startswith("/api/analyze"):
             qs = parse_qs(urlparse(self.path).query)
             fen = (qs.get("fen") or [""])[0]
